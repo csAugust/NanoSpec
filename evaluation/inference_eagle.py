@@ -7,7 +7,7 @@ from evaluation.gsm8k.eval import run_eval as run_eval_gsm8k
 from transformers import AutoTokenizer, AutoConfig
 from llamacu.speculative.eagle import LLM_with_eagle
 
-def eagle_forward(inputs, model, tokenizer, max_new_tokens, max_length, teminators):
+def eagle_forward(inputs, model, tokenizer, max_new_tokens, max_length, teminators, do_copy=False):
     input_ids = inputs.input_ids.int()
 
     prefill_length = len(input_ids[0])
@@ -18,6 +18,8 @@ def eagle_forward(inputs, model, tokenizer, max_new_tokens, max_length, teminato
         input_ids=input_ids,
         generation_length=max_new_tokens,
         teminators=teminators,
+        do_copy=do_copy,
+        tokenizer=tokenizer
     )
 
     new_token = len(output_ids)
@@ -132,12 +134,14 @@ if __name__ == "__main__":
     config = AutoConfig.from_pretrained(args.model_path)
     max_length = min(args.max_length, config.max_position_embeddings)
 
+    FAKE_V=args.V
+    # FAKE_V=2048
     model = LLM_with_eagle(
         base_path=args.model_path,
         eagle_path=args.eagle_path,
         memory_limit=args.memory_limit,
-        chunk_length=max_length,
-        V=args.V if args.V != -1 else config.vocab_size,
+        # chunk_length=max_length, # 开这个会导致接受率非常低
+        V=FAKE_V if args.V != -1 else config.vocab_size,
         dtype=str_to_torch_dtype(args.dtype),
         cuda_graph=args.cuda_graph,
         num_iter=args.eagle_num_iter,
@@ -147,6 +151,7 @@ if __name__ == "__main__":
     if args.V != -1:
         with open(f'{args.eagle_path}/freq_{args.V}.pt', 'rb') as f:
             token_id_remap = torch.tensor(torch.load(f, weights_only=True), dtype=torch.int32, device="cpu")
+            token_id_remap = token_id_remap[:FAKE_V]
         print(f'Load token_id_remap from {args.eagle_path}/freq_{args.V}.pt')
     else:
         token_id_remap = torch.arange(config.vocab_size, dtype=torch.int32, device="cpu")

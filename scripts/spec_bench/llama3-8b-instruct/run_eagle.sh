@@ -1,6 +1,6 @@
 export CUDA_VISIBLE_DEVICES=2
-Model_Path=meta-llama/Meta-Llama-3-8B-Instruct
-Eagle_Path=models/LLaMA3-Instruct-8B-FR-Spec
+Model_Path=/mnt/bos-text/models/hf_models/Llama-3.1-8B-Instruct
+Eagle_Path=/mnt/user-ssd/chenzhiyang1/workspace/Models/EAGLE-LLaMA3.1-Instruct-8B
 Model_id="llama-3-8b-instruct"
 Bench_name="spec_bench"
 
@@ -13,4 +13,6 @@ python3 evaluation/inference_eagle.py \
     --bench-name $Bench_name \
     --dtype "float16" \
     --chat-template "llama-3" \
+    --question-end 1 \
+    --max-new-tokens 128 \
 

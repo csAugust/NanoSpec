@@ -28,7 +28,8 @@ class NinjaBuildExtension(BuildExtension):
         super().__init__(*args, **kwargs)
 
 # change arch="80" to other code for your platform, see https://developer.nvidia.com/cuda-gpus#compute.
-arch = "80"
+arch = "90"
+DEBUG_MODE = os.getenv("DEBUG_BUILD", "0") == "1"
 
 setup(
     name='llamacu',
@@ -65,20 +66,22 @@ setup(
             ],
             libraries=["cublas"],
             extra_compile_args={
-                "cxx": ["-O3", "-std=c++17"],
+                "cxx": ["-O0" if DEBUG_MODE else "-O3", "-std=c++17"], # Use O0 for debug
                 "nvcc": append_nvcc_threads(
                     [
-                        "-O3", "-std=c++17",
+                        "-O0" if DEBUG_MODE else "-O3", # Use O0 for debug
+                        "-std=c++17",
                         "-U__CUDA_NO_HALF_OPERATORS__",
                         "-U__CUDA_NO_HALF_CONVERSIONS__",
                         "-U__CUDA_NO_HALF2_OPERATORS__",
                         "-U__CUDA_NO_BFLOAT16_CONVERSIONS__",
                         "--expt-relaxed-constexpr",
                         "--expt-extended-lambda",
-                        "--use_fast_math",
+                        # "--use_fast_math",
                         "-gencode", f"arch=compute_{arch},code=sm_{arch}",
                         f"-D_ARCH{arch}",
                     ]
+                    + (["--use_fast_math"] if not DEBUG_MODE else [])
                 ),
             },
             include_dirs=[

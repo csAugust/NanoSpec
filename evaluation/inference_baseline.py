@@ -118,7 +118,7 @@ if __name__ == "__main__":
     model = LLM(
         path=args.model_path,
         memory_limit=args.memory_limit,
-        chunk_length=max_length,
+        # chunk_length=max_length,
         dtype=str_to_torch_dtype(args.dtype),
         cuda_graph=args.cuda_graph,
     )

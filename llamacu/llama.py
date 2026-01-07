@@ -58,7 +58,8 @@ class LLM(torch.nn.Module):
             has_attention_bias
         )
 
-        self.logits = torch.empty((64, self.config.vocab_size), dtype=self.dtype, device="cuda")
+        # self.logits = torch.empty((64, self.config.vocab_size), dtype=self.dtype, device="cuda")
+        self.logits = torch.empty((1024, self.config.vocab_size), dtype=self.dtype, device="cuda")
 
     def init_storage(self):
         self.max_total_length = C.init_storage()
@@ -147,7 +148,8 @@ class LLM(torch.nn.Module):
                 self.logits.data_ptr()
             )
             torch.cuda.nvtx.range_pop()
-        return self.logits[:1].clone()
+        return self.logits.clone()
+        # return self.logits[:1].clone()
 
     def decode(self, input_ids, position_ids, cache_length, mask_2d = None):
         assert input_ids.dtype == torch.int32
