@@ -157,6 +157,7 @@ if __name__ == "__main__":
         token_id_remap = torch.arange(config.vocab_size, dtype=torch.int32, device="cpu")
     model._load("token_id_remap", token_id_remap, cls="eagle")
     model.load_from_hf()
+    model.set_token_id_remap(token_id_remap)
 
     tokenizer = AutoTokenizer.from_pretrained(args.model_path)
 

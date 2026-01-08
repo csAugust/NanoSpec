@@ -4,8 +4,7 @@
 #include "../trait.cuh"
 #include "../utils.cuh"
 #include "elementwise.cuh"
-
-#include <cuda_runtime.h>
+#include "batched_gemv.cuh"
 
 // Kernel implementation using Warp-level primitives
 template <typename T, bool has_bias>
@@ -184,6 +183,31 @@ struct Linear {
             this->bias, // Will be nullptr if has_bias is false, kernel handles it
             indices,
             tgt_output
+        );
+    }
+
+    // N: num_tokens (batch size)
+    // K: num_indices (context length)
+    // input: [N, H]
+    // tgt_output: [N, K]
+    void prefill_gathered_batched(const Stream& stream, int N, T* input, const int* indices, int K, T* tgt_output) {
+        static_assert(transposed, "Gathered GEMM requires transposed weight layout [Out, In]");
+        
+        // N here is num_tokens (batch size)
+        // H is dim_in
+        // K is num_indices (context length)
+        // V is dim_out
+        
+        launch_gather_gemm_batched<T, has_bias>(
+            stream,
+            N,           // N
+            this->dim_in, // H
+            K,           // K
+            input,       // A
+            this->weight,// B
+            this->bias,  // bias
+            indices,     // indices
+            tgt_output   // C
         );
     }
 };
