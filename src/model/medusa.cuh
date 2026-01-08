@@ -146,7 +146,7 @@ struct MedusaImpl : Model {
         this->model->decode(num_tokens, padded_length, input, position_ids, cache_length, mask_2d, output);
     }
 
-    void draft(int32_t* tree_draft_ids, int32_t* tree_position_ids, int32_t* cache_length, uint64_t*, int32_t*) {
+    void draft(int32_t* tree_draft_ids, int32_t* tree_position_ids, int32_t* cache_length, uint64_t*, int32_t*, int32_t*, int32_t) {
         for (int i = 0; i < num_heads; i++) {
             blocks[i]->prefill(calc_stream, 1, this->last_token_hidden_state);
             lm_heads[i]->prefill(calc_stream, 1, blocks[i]->output, this->logits + i * this->V);

@@ -1,3 +1,5 @@
+source /opt/venv/bin/activate
+
 CUDA_VISIBLE_DEVICES=7 python examples/example_generate.py
 
 # rebuild cuda

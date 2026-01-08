@@ -44,6 +44,9 @@ class LLM_with_tree_drafter(LLM):
 
         self.cache_length = torch.tensor([0], dtype=torch.int32, device="cuda")
 
+        self.MAX_CONTEXT_LENGTH = 2048
+        self.context_tokens_tensor = torch.empty((self.MAX_CONTEXT_LENGTH), dtype=torch.int32, device="cuda")
+
     def load_from_hf(self):
         self._load_from_ckpt(self.drafter_path, cls=self.drafter_type)
         super().load_from_hf()
@@ -62,9 +65,13 @@ class LLM_with_tree_drafter(LLM):
             prefill_topk_tokens += topk_tokens.tolist()
         context_tokens = prefill_topk_tokens + input_ids[0].tolist()
         context_tokens = sorted(list(set(context_tokens)))
-        context_tokens_tensor = torch.tensor(context_tokens, dtype=torch.int32, device="cuda")
         context_tokens_set = set(context_tokens)
-        print(len(context_tokens), ':', context_tokens_tensor)
+        # context_length = len(context_tokens)
+        # self.context_tokens_tensor[:context_length].copy_(torch.tensor(context_tokens, dtype=torch.int32))
+        assert(hasattr(self, 'V'))
+        self.context_tokens_tensor = torch.range(0, self.V - 1, dtype=torch.int32, device="cuda")
+        context_length = self.context_tokens_tensor.numel()
+        print(f'Limited vocab context: {context_length}')
 
         self.tree_draft_ids[:1].copy_(logits[0].argmax(dim=-1))
 
@@ -98,7 +105,9 @@ class LLM_with_tree_drafter(LLM):
             self.cache_length[0] = prefix_length + i
 
             torch.cuda.nvtx.range_push(f"draft")
-            C.draft(self.tree_draft_ids.data_ptr(), self.tree_position_ids.data_ptr(), self.cache_length.data_ptr(), self.tree_attn_mask.data_ptr(), self.tree_parent.data_ptr(), context_tokens_tensor.data_ptr(), context_tokens_tensor.numel())
+            C.draft(self.tree_draft_ids.data_ptr(), self.tree_position_ids.data_ptr(), self.cache_length.data_ptr(),
+                    self.tree_attn_mask.data_ptr(), self.tree_parent.data_ptr(),
+                    self.context_tokens_tensor.data_ptr(), context_length)
             torch.cuda.nvtx.range_pop()
 
             if SAVE:
@@ -154,7 +163,10 @@ class LLM_with_tree_drafter(LLM):
             acc_occur_rate = acc_draft_cnt / len(self.tree_draft_ids[:append_length])
             print(f"Step{model_step}: full {full_occur_rate:.2f}, acc {acc_occur_rate:.2f}({acc_draft_str}) | acc length {accept_length} | {tokenizer.decode(self.tree_draft_ids[:append_length], skip_special_tokens=False)}")
             
-            context_tokens_tensor = torch.concat((context_tokens_tensor, self.tree_draft_ids[:append_length]))
+            # old_context_length = context_length
+            # context_length += append_length
+            # self.context_tokens_tensor[old_context_length:context_length].copy_(self.tree_draft_ids[:append_length])
+            
             context_tokens_set.update(self.tree_draft_ids.view(-1).tolist())
             context_tokens_set.update(self.tree_gt_ids.view(-1).tolist())
 

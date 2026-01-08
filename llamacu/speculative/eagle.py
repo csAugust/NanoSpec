@@ -30,6 +30,7 @@ class LLM_with_eagle(LLM_with_tree_drafter):
 
         self.eagle_path = eagle_path
         self.eagle_config = EagleConfig.from_pretrained(eagle_path)
+        self.V = V
 
         C.init_eagle_model(
             self.eagle_config.eagle_num_layers,

@@ -267,6 +267,9 @@ struct EagleImpl : Model {
     bool is_first_draft;
     int V;
 
+    int32_t *context_token_ids;
+    int MAX_CONTEXT_TOKENS = 1024;
+
     int32_t *h_best, *d_best;    
 
     T* tmp_kvcache;
@@ -298,6 +301,7 @@ struct EagleImpl : Model {
         for (int i = 0; i < num_layers; i++) {
             layers.push_back(new Layer<T, has_attention_bias>(this->model->hidden_size, intermediate_size, num_attention_heads, num_key_value_heads, head_dim, rms_norm_eps));
         }
+        printf("Initing with vocab V: %d\n", V);
         lm_head = new Linear<T>(this->model->hidden_size, V);
 
         topk_func = new functions::TopK<T>(V, topk_per_iter);
@@ -325,7 +329,7 @@ struct EagleImpl : Model {
         }
         offset = layer_end;
         offset = lm_head->init_output_ptr(memory, 64, offset);
-        offset = memory->allocate((void**)&eagle_logits, offset, this->topk_per_iter * V * sizeof(T));
+        offset = memory->allocate((void**)&eagle_logits, offset, 2 * this->topk_per_iter * V * sizeof(T));
         offset = memory->allocate((void**)&eagle_mask_2d, offset, this->topk_per_iter * sizeof(uint64_t));
         offset = memory->allocate((void**)&tmp_mask_2d, offset, this->topk_per_iter * sizeof(uint64_t));
         offset = memory->allocate((void**)&tired_history_val, offset, this->total_tried * sizeof(T));
@@ -340,6 +344,8 @@ struct EagleImpl : Model {
         offset = memory->allocate((void**)&prev_embed, offset, num_tokens * this->model->hidden_size * sizeof(T));
         offset = memory->allocate((void**)&eagle_position_ids, offset, num_tokens * sizeof(int32_t));
         offset = memory->allocate((void**)&eagle_cache_length, offset, sizeof(int32_t));
+
+        offset = memory->allocate((void**)&context_token_ids, offset, sizeof(int32_t) * this->MAX_CONTEXT_TOKENS);
 
         offset = memory->allocate((void**)&d_best, offset, 2 * sizeof(int32_t));
         cudaMallocHost(&h_best, 2 * sizeof(int32_t));
@@ -429,10 +435,11 @@ struct EagleImpl : Model {
         this->model->decode(num_tokens, padded_length, input, position_ids, cache_length, mask_2d, output);
     }
 
-    void draft(int32_t* tree_draft_ids, int32_t* tree_position_ids, int32_t* cache_length, uint64_t* tree_attn_mask, int32_t* tree_parent) {
+    void draft(int32_t* tree_draft_ids, int32_t* tree_position_ids, int32_t* cache_length, uint64_t* tree_attn_mask, int32_t* tree_parent, int32_t* context_tokens, int32_t context_length) {
         cudaMemcpy(this->eagle_original_length, cache_length, sizeof(int32_t), cudaMemcpyDeviceToHost);
         this->eagle_padded_length = (this->eagle_original_length[0] + 256 - 1) / 128 * 128;
 
+        printf("%d\n", context_length);
 
         if (this->is_first_draft) {
             this->model->embedding->prefill(calc_stream, 1, tree_draft_ids);
@@ -442,15 +449,25 @@ struct EagleImpl : Model {
         }
         cudaMemcpy(this->eagle_cache_length, cache_length, sizeof(int32_t), cudaMemcpyDeviceToDevice);
         cudaMemcpy(this->eagle_position_ids, cache_length, sizeof(int32_t), cudaMemcpyDeviceToDevice);
+        cudaMemcpy(this->context_token_ids, context_tokens, context_length * sizeof(int32_t), cudaMemcpyDeviceToDevice);
         repeat(calc_stream, topk_per_iter, 1, 0, this->eagle_position_ids);
 
         { // d = 0
-            lm_head->prefill(calc_stream, 1, this->fc2->output + (num_prev - 1) * this->model->hidden_size, this->eagle_logits);
-            log_softmax(calc_stream, 1, V, this->eagle_logits);
-            this->topk_func->prefill(calc_stream, 1, this->eagle_logits);
+
+            this->model->lm_head->prefill_gathered(calc_stream, this->fc2->output + (num_prev - 1) * this->model->hidden_size, this->context_token_ids, context_length, this->eagle_logits);
+            log_softmax(calc_stream, 1, context_length, this->eagle_logits);
+
+            // lm_head->prefill(calc_stream, 1, this->fc2->output + (num_prev - 1) * this->model->hidden_size, this->eagle_logits);
+            // log_softmax(calc_stream, 1, V, this->eagle_logits);
+
+            this->topk_func->prefill(calc_stream, 1, this->eagle_logits, context_length);
             cudaMemcpy(this->tired_history_val, this->topk_func->topk_val, topk_per_iter * sizeof(T), cudaMemcpyDeviceToDevice);
             cudaMemcpy(this->tired_history_pos, this->topk_func->topk_pos, topk_per_iter * sizeof(int32_t), cudaMemcpyDeviceToDevice);
-            remap(calc_stream, topk_per_iter, this->topk_func->topk_pos, this->topk_func_2->topk_pos, this->token_id_remap);
+
+            remap(calc_stream, topk_per_iter, this->topk_func->topk_pos, this->topk_func_2->topk_pos, this->context_token_ids);
+            
+            // remap(calc_stream, topk_per_iter, this->topk_func->topk_pos, this->topk_func_2->topk_pos, this->token_id_remap);
+            
             cudaMemcpy(this->topk_func_2->topk_val, this->topk_func->topk_val, topk_per_iter * sizeof(T), cudaMemcpyDeviceToDevice);
             repeat(calc_stream, topk_per_iter, this->model->hidden_size, num_prev-1, this->fc2->output, this->fc1->output);
             init_tree(calc_stream, topk_per_iter, this->eagle_mask_2d);
@@ -469,9 +486,21 @@ struct EagleImpl : Model {
             elementwise_add(calc_stream, topk_per_iter, this->model->hidden_size, this->fc2->output, layer_output, this->fc2->output);
             add(calc_stream, topk_per_iter, this->eagle_position_ids, 1);
 
-            lm_head->prefill(calc_stream, topk_per_iter, this->fc2->output, this->eagle_logits);
-            log_softmax(calc_stream, topk_per_iter, V, this->eagle_logits);
-            this->topk_func->prefill(calc_stream, topk_per_iter, this->eagle_logits);
+            // lm_head->prefill(calc_stream, topk_per_iter, this->fc2->output, this->eagle_logits);
+            // log_softmax(calc_stream, topk_per_iter, V, this->eagle_logits);
+
+            for (int i = 0; i < topk_per_iter; i++) {
+                this->model->lm_head->prefill_gathered(
+                    calc_stream,
+                    this->fc2->output + i * this->model->hidden_size, // input: 第 i 个 hidden state
+                    this->context_token_ids,
+                    context_length,
+                    this->eagle_logits + i * context_length
+                );    
+            }
+            log_softmax(calc_stream, topk_per_iter, context_length, this->eagle_logits);
+
+            this->topk_func->prefill(calc_stream, topk_per_iter, this->eagle_logits, context_length);
             cumsum(calc_stream, topk_per_iter, topk_per_iter, this->topk_func->topk_val, this->topk_func_2->topk_val);
             cudaMemcpy(this->tired_history_val + topk_per_iter + (d - 1) * topk_per_iter * topk_per_iter, this->topk_func->topk_val, topk_per_iter * topk_per_iter * sizeof(T), cudaMemcpyDeviceToDevice);
             cudaMemcpy(this->tired_history_pos + topk_per_iter + (d - 1) * topk_per_iter * topk_per_iter, this->topk_func->topk_pos, topk_per_iter * topk_per_iter * sizeof(int32_t), cudaMemcpyDeviceToDevice);
@@ -481,14 +510,24 @@ struct EagleImpl : Model {
             set_parent(calc_stream, topk_per_iter, this->tired_history_parent + (d - 1) * topk_per_iter, this->topk_func_2->topk_pos, topk_per_iter + (d - 1) * topk_per_iter * topk_per_iter);
             update_tree(calc_stream, topk_per_iter, topk_per_iter * d, this->eagle_mask_2d, this->tmp_mask_2d, this->topk_func_2->topk_pos);
             remap_hidden(calc_stream, topk_per_iter, this->model->hidden_size, this->topk_func_2->topk_pos, this->fc2->output, this->fc1->output, topk_per_iter);
-            remap_id(calc_stream, topk_per_iter, this->topk_func_2->topk_pos, this->topk_func->topk_pos, this->token_id_remap);
+            // remap_id(calc_stream, topk_per_iter, this->topk_func_2->topk_pos, this->topk_func->topk_pos, this->token_id_remap);
+
+            remap_id(
+                calc_stream,
+                topk_per_iter,
+                this->topk_func_2->topk_pos,
+                this->topk_func->topk_pos,
+                this->context_token_ids
+            );
         }
 
         this->topk_func_2->prefill(calc_stream, 1, this->tired_history_val);
 
         // build tree
         build_dynamic_tree(calc_stream, this->tree_size, this->eagle_original_length[0], this->topk_per_iter, this->tired_history_parent, this->topk_func_2->topk_pos, tree_position_ids, tree_attn_mask, tree_parent);
-        remap_id(calc_stream, this->tree_size-1, this->topk_func_2->topk_pos, this->tired_history_pos, this->token_id_remap, tree_draft_ids + 1);
+        // remap_id(calc_stream, this->tree_size-1, this->topk_func_2->topk_pos, this->tired_history_pos, this->token_id_remap, tree_draft_ids + 1);
+        
+        remap_id(calc_stream, this->tree_size-1, this->topk_func_2->topk_pos, this->tired_history_pos, this->context_token_ids, tree_draft_ids + 1);
 
         this->is_first_draft = false;
     }
