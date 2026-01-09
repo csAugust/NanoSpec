@@ -146,7 +146,7 @@ struct MedusaImpl : Model {
         this->model->decode(num_tokens, padded_length, input, position_ids, cache_length, mask_2d, output);
     }
 
-    void draft(int32_t* tree_draft_ids, int32_t* tree_position_ids, int32_t* cache_length, uint64_t*, int32_t*, int32_t*, int32_t) {
+    void draft(int32_t* tree_draft_ids, int32_t* tree_position_ids, int32_t* cache_length, uint64_t*, int32_t*, int32_t*, int32_t, int32_t) {
         for (int i = 0; i < num_heads; i++) {
             blocks[i]->prefill(calc_stream, 1, this->last_token_hidden_state);
             lm_heads[i]->prefill(calc_stream, 1, blocks[i]->output, this->logits + i * this->V);
@@ -163,4 +163,6 @@ struct MedusaImpl : Model {
         this->last_token_hidden_state = this->model->norm->output + h_best[1] * this->model->hidden_size;
         return h_best[0];
     }
+
+    void async_prefetch(int32_t* gpu_context_buffer, int32_t* cpu_new_tokens, int32_t num_new, int32_t offset) { throw std::runtime_error("async_prefetch is not supported"); }
 };

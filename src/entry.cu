@@ -105,7 +105,8 @@ void init_eagle_model(
     int topk_per_iter,
     int tree_size,
     int V,
-    int torch_dtype
+    int torch_dtype,
+    int max_context_tokens
 ) {
     DTYPE_SWITCH(torch_dtype, [&] {
         const bool attention_bias = dynamic_cast<ModelImpl<elem_type, true>*>(model) != nullptr;
@@ -121,7 +122,8 @@ void init_eagle_model(
                 num_iter,
                 topk_per_iter,
                 tree_size,
-                V
+                V,
+                max_context_tokens
             );
         });
     });
@@ -163,12 +165,22 @@ void decode(int input_length, int padded_length, std::uintptr_t input, std::uint
     }
 }
 
-void draft(std::uintptr_t tree_draft_ids, std::uintptr_t tree_position_ids, std::uintptr_t cache_length, std::uintptr_t attn_mask, std::uintptr_t tree_parent, std::uintptr_t context_tokens, std::int32_t context_length) {
-    model->draft(reinterpret_cast<int32_t*>(tree_draft_ids), reinterpret_cast<int32_t*>(tree_position_ids), reinterpret_cast<int32_t*>(cache_length), reinterpret_cast<uint64_t*>(attn_mask), reinterpret_cast<int32_t*>(tree_parent), reinterpret_cast<int32_t*>(context_tokens), context_length);
+void draft(std::uintptr_t tree_draft_ids, std::uintptr_t tree_position_ids, std::uintptr_t cache_length, std::uintptr_t attn_mask, std::uintptr_t tree_parent, std::uintptr_t context_tokens, std::int32_t context_length, std::int32_t mode) {
+    model->draft(reinterpret_cast<int32_t*>(tree_draft_ids), reinterpret_cast<int32_t*>(tree_position_ids), reinterpret_cast<int32_t*>(cache_length), reinterpret_cast<uint64_t*>(attn_mask), reinterpret_cast<int32_t*>(tree_parent), reinterpret_cast<int32_t*>(context_tokens), context_length, mode);
 }
 
 int verify_and_fix(int num_tokens, std::uintptr_t pred, std::uintptr_t gt, std::uintptr_t position_ids, std::uintptr_t cache_length, std::uintptr_t attn_mask, std::uintptr_t tree_parent) {
     return model->verify(num_tokens, reinterpret_cast<int32_t*>(pred), reinterpret_cast<int32_t*>(gt), reinterpret_cast<int32_t*>(position_ids), reinterpret_cast<int32_t*>(cache_length), reinterpret_cast<uint64_t*>(attn_mask), reinterpret_cast<int32_t*>(tree_parent));
+}
+
+void trigger_async_prefetch(std::uintptr_t gpu_context_buffer, std::uintptr_t cpu_new_tokens, std::int32_t num_new, std::int32_t offset) {
+    if (num_new == 0) return;
+    model->async_prefetch(
+        reinterpret_cast<int32_t*>(gpu_context_buffer),
+        reinterpret_cast<int32_t*>(cpu_new_tokens),
+        num_new,
+        offset
+    );
 }
 
 PYBIND11_MODULE(C, m) {
@@ -181,4 +193,5 @@ PYBIND11_MODULE(C, m) {
     m.def("decode", &decode, "Decode");
     m.def("draft", &draft, "Draft");
     m.def("verify_and_fix", &verify_and_fix, "Verify and fix");
+    m.def("trigger_async_prefetch", &trigger_async_prefetch, "trigger_async_prefetch");
 } 

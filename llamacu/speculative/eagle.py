@@ -21,10 +21,12 @@ class LLM_with_eagle(LLM_with_tree_drafter):
                  topk_per_iter=10,
                  tree_size=60,
                  V=15000,
+                 max_context_tokens=1024,
                  **kwargs):
         super().__init__(
             "eagle", eagle_path, base_path,
             tree_size = tree_size,
+            max_context_tokens = max_context_tokens,
             **kwargs
         )
 
@@ -44,6 +46,7 @@ class LLM_with_eagle(LLM_with_tree_drafter):
             self.tree_size,
             V,
             self.dtype_int,
+            max_context_tokens
         )
 
     def _load(self, name, param, dtype=None, cls=None):

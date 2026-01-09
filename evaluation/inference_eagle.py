@@ -7,7 +7,7 @@ from evaluation.gsm8k.eval import run_eval as run_eval_gsm8k
 from transformers import AutoTokenizer, AutoConfig
 from llamacu.speculative.eagle import LLM_with_eagle
 
-def eagle_forward(inputs, model, tokenizer, max_new_tokens, max_length, teminators, do_copy=False):
+def eagle_forward(inputs, model, tokenizer, max_new_tokens, max_length, teminators, is_warmup=False):
     input_ids = inputs.input_ids.int()
 
     prefill_length = len(input_ids[0])
@@ -18,8 +18,8 @@ def eagle_forward(inputs, model, tokenizer, max_new_tokens, max_length, teminato
         input_ids=input_ids,
         generation_length=max_new_tokens,
         teminators=teminators,
-        do_copy=do_copy,
-        tokenizer=tokenizer
+        tokenizer=tokenizer,
+        is_warmup=is_warmup
     )
 
     new_token = len(output_ids)
@@ -134,8 +134,8 @@ if __name__ == "__main__":
     config = AutoConfig.from_pretrained(args.model_path)
     max_length = min(args.max_length, config.max_position_embeddings)
 
-    FAKE_V=args.V
-    # FAKE_V=2048
+    # FAKE_V=args.V
+    FAKE_V=4096
     model = LLM_with_eagle(
         base_path=args.model_path,
         eagle_path=args.eagle_path,
@@ -146,6 +146,7 @@ if __name__ == "__main__":
         cuda_graph=args.cuda_graph,
         num_iter=args.eagle_num_iter,
         tree_size=args.eagle_tree_size,
+        max_context_tokens=4096,
     )
     model.init_storage()
     if args.V != -1:

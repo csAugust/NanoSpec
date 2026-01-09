@@ -123,6 +123,7 @@ def get_model_answers(
                 max_new_tokens,
                 max_length,
                 teminators,
+                is_warmup=True,
                 **kwargs,
             )
             torch.cuda.synchronize()
@@ -180,7 +181,7 @@ def get_model_answers(
             new_tokens = []
             wall_time = []
             generate_speed = []
-            for j in range(len(question["turns"])):
+            for j in range(len(question["turns"][:1])):
                 qs = question["turns"][j]
                 messages.append({
                     "role": "user",
@@ -202,6 +203,7 @@ def get_model_answers(
                     max_new_tokens,
                     max_length,
                     teminators,
+                    is_warmup=False,
                     **kwargs,
                 )
                 torch.cuda.synchronize()

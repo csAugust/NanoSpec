@@ -4,7 +4,7 @@
 #include "../trait.cuh"
 #include "../utils.cuh"
 #include "elementwise.cuh"
-#include "batched_gemv.cuh"
+#include "custom/batched_gemv.cuh"
 
 // Kernel implementation using Warp-level primitives
 template <typename T, bool has_bias>
@@ -184,6 +184,10 @@ struct Linear {
             indices,
             tgt_output
         );
+    }
+
+    void prefill_repack_sync(const Stream& stream, int32_t num_tokens, int32_t effective_dim_out, T* input, T* repack_weight, T* tgt=nullptr, bool inplace=false) {
+        linear<T, transposed>(stream, num_tokens, dim_in, effective_dim_out, input, repack_weight, tgt, inplace);
     }
 
     // N: num_tokens (batch size)

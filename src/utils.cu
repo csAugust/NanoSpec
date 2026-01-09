@@ -3,6 +3,8 @@
 bool initialized = false;
 
 Stream calc_stream;
+Stream copy_stream;
+cudaEvent_t copy_event;
 
 int graphCreated_padding_length = -1;
 int graphCreated_input_length = -1;
@@ -14,5 +16,11 @@ void init_resources() {
   cudaCheck(cudaStreamCreate(&calc_stream.stream));
   cublasCheck(cublasCreate(&calc_stream.cublas_handle));
   cublasCheck(cublasSetStream(calc_stream.cublas_handle, calc_stream.stream));
+
+  cudaCheck(cudaStreamCreate(&copy_stream.stream));
+  cublasCheck(cublasCreate(&copy_stream.cublas_handle));
+  cublasCheck(cublasSetStream(copy_stream.cublas_handle, copy_stream.stream));
+  cudaEventCreateWithFlags(&copy_event, cudaEventDisableTiming);
+
   initialized = true;
 }

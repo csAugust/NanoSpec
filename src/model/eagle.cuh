@@ -6,6 +6,7 @@
 #include "kvcache.cuh"
 #include "norm.cuh"
 #include "elementwise.cuh"
+#include "custom/gather_copy.cuh"
 
 namespace {
 __global__ void add_kernel(int32_t* ptr, int32_t value) {
@@ -268,7 +269,8 @@ struct EagleImpl : Model {
     int V;
 
     int32_t *context_token_ids;
-    int MAX_CONTEXT_TOKENS = 1024;
+    int max_context_tokens = 1024;
+    T* repack_buffer;
 
     int32_t *h_best, *d_best;    
 
@@ -285,7 +287,8 @@ struct EagleImpl : Model {
         int num_iter,
         int topk_per_iter,
         int tree_size,
-        int V
+        int V,
+        int max_context_tokens
     ) {
         this->model = model;
         this->num_layers = num_layers;
@@ -294,6 +297,7 @@ struct EagleImpl : Model {
         this->tree_size = tree_size;
         this->total_tried = topk_per_iter * topk_per_iter * (num_iter - 1) + topk_per_iter;
         this->V = V;
+        this->max_context_tokens = max_context_tokens;
 
         kv_caches = new KVCacheManager<T>(num_layers, num_key_value_heads, head_dim);
         fc1 = new Linear<T, true, true>(this->model->hidden_size, this->model->hidden_size);
@@ -301,7 +305,7 @@ struct EagleImpl : Model {
         for (int i = 0; i < num_layers; i++) {
             layers.push_back(new Layer<T, has_attention_bias>(this->model->hidden_size, intermediate_size, num_attention_heads, num_key_value_heads, head_dim, rms_norm_eps));
         }
-        printf("Initing with vocab V: %d\n", V);
+        printf("Initing with vocab V: %d max_context_tokens: %d\n", V, max_context_tokens);
         lm_head = new Linear<T>(this->model->hidden_size, V);
 
         topk_func = new functions::TopK<T>(V, topk_per_iter);
@@ -345,7 +349,8 @@ struct EagleImpl : Model {
         offset = memory->allocate((void**)&eagle_position_ids, offset, num_tokens * sizeof(int32_t));
         offset = memory->allocate((void**)&eagle_cache_length, offset, sizeof(int32_t));
 
-        offset = memory->allocate((void**)&context_token_ids, offset, sizeof(int32_t) * this->MAX_CONTEXT_TOKENS);
+        offset = memory->allocate((void**)&context_token_ids, offset, sizeof(int32_t) * this->max_context_tokens);
+        offset = memory->allocate((void**)&repack_buffer, offset, sizeof(T) * this->max_context_tokens * this->model->hidden_size);
 
         offset = memory->allocate((void**)&d_best, offset, 2 * sizeof(int32_t));
         cudaMallocHost(&h_best, 2 * sizeof(int32_t));
@@ -502,12 +507,98 @@ struct EagleImpl : Model {
         this->is_first_draft = false;
     }
 
-    void draft(int32_t* tree_draft_ids, int32_t* tree_position_ids, int32_t* cache_length, uint64_t* tree_attn_mask, int32_t* tree_parent, int32_t* context_tokens, int32_t context_length) {
-        if (context_length == -1) {
-            draft_frspec(tree_draft_ids, tree_position_ids, cache_length, tree_attn_mask, tree_parent);
-            return;
+    void draft_prefetch(int32_t* tree_draft_ids, int32_t* tree_position_ids, int32_t* cache_length, uint64_t* tree_attn_mask, int32_t* tree_parent, int32_t* context_tokens, int context_length) {
+        cudaMemcpy(this->eagle_original_length, cache_length, sizeof(int32_t), cudaMemcpyDeviceToHost);
+        this->eagle_padded_length = (this->eagle_original_length[0] + 256 - 1) / 128 * 128;
+
+        if (this->is_first_draft) {
+            this->model->embedding->prefill(calc_stream, 1, tree_draft_ids);
+            this->eagle_prefill(this->num_history_tokens);
+        } else {
+            this->eagle_decode(cache_length);
+        }
+        cudaMemcpy(this->eagle_cache_length, cache_length, sizeof(int32_t), cudaMemcpyDeviceToDevice);
+        cudaMemcpy(this->eagle_position_ids, cache_length, sizeof(int32_t), cudaMemcpyDeviceToDevice);
+        cudaMemcpy(this->context_token_ids, context_tokens, context_length * sizeof(int32_t), cudaMemcpyDeviceToDevice);
+        repeat(calc_stream, topk_per_iter, 1, 0, this->eagle_position_ids);
+
+        cudaStreamWaitEvent(calc_stream.stream, copy_event, 0); 
+
+        { // d = 0
+            this->model->lm_head->prefill_repack_sync(
+                calc_stream,
+                1,                       // N
+                context_length,
+                this->fc2->output + (num_prev - 1) * this->model->hidden_size,   // Input A [N, H]
+                this->repack_buffer,     // [K, V]
+                this->eagle_logits       // Output C [N, K]
+            );
+            log_softmax(calc_stream, 1, context_length, this->eagle_logits);
+
+            this->topk_func->prefill(calc_stream, 1, this->eagle_logits, context_length);
+            cudaMemcpy(this->tired_history_val, this->topk_func->topk_val, topk_per_iter * sizeof(T), cudaMemcpyDeviceToDevice);
+            cudaMemcpy(this->tired_history_pos, this->topk_func->topk_pos, topk_per_iter * sizeof(int32_t), cudaMemcpyDeviceToDevice);
+
+            remap(calc_stream, topk_per_iter, this->topk_func->topk_pos, this->topk_func_2->topk_pos, this->context_token_ids);
+            
+            cudaMemcpy(this->topk_func_2->topk_val, this->topk_func->topk_val, topk_per_iter * sizeof(T), cudaMemcpyDeviceToDevice);
+            repeat(calc_stream, topk_per_iter, this->model->hidden_size, num_prev-1, this->fc2->output, this->fc1->output);
+            init_tree(calc_stream, topk_per_iter, this->eagle_mask_2d);
+        }
+        for (int d = 1; d < this->num_iter; ++d) {
+            add(calc_stream, 1, this->eagle_cache_length, topk_per_iter);
+            this->model->embedding->prefill(calc_stream, topk_per_iter, this->topk_func_2->topk_pos);
+            this->fc2->prefill(calc_stream, topk_per_iter, this->fc1->output);
+            this->fc1->prefill(calc_stream, topk_per_iter, this->model->embedding->output);
+            elementwise_add(calc_stream, topk_per_iter, this->model->hidden_size, this->fc1->output, this->fc2->output, this->fc2->output);
+            T* layer_output = nullptr;
+            for (int i = 0; i < num_layers; i++) {
+                this->layers[i]->decode(topk_per_iter, this->eagle_padded_length, this->fc2->output, layer_output, this->eagle_position_ids, this->eagle_cache_length, Mask(eagle_mask_2d, topk_per_iter, topk_per_iter * d), this->kv_caches->caches[i]);
+                layer_output = this->layers[i]->output;
+            }
+            elementwise_add(calc_stream, topk_per_iter, this->model->hidden_size, this->fc2->output, layer_output, this->fc2->output);
+            add(calc_stream, topk_per_iter, this->eagle_position_ids, 1);
+
+            this->model->lm_head->prefill_repack_sync(
+                calc_stream,
+                topk_per_iter,           // N
+                context_length,
+                this->fc2->output,       // Input A [N, H]
+                this->repack_buffer,     // [K, V]
+                this->eagle_logits       // Output C [N, K]
+            );
+
+            log_softmax(calc_stream, topk_per_iter, context_length, this->eagle_logits);
+
+            this->topk_func->prefill(calc_stream, topk_per_iter, this->eagle_logits, context_length);
+            cumsum(calc_stream, topk_per_iter, topk_per_iter, this->topk_func->topk_val, this->topk_func_2->topk_val);
+            cudaMemcpy(this->tired_history_val + topk_per_iter + (d - 1) * topk_per_iter * topk_per_iter, this->topk_func->topk_val, topk_per_iter * topk_per_iter * sizeof(T), cudaMemcpyDeviceToDevice);
+            cudaMemcpy(this->tired_history_pos + topk_per_iter + (d - 1) * topk_per_iter * topk_per_iter, this->topk_func->topk_pos, topk_per_iter * topk_per_iter * sizeof(int32_t), cudaMemcpyDeviceToDevice);
+            this->topk_func_2->prefill(calc_stream, 1, this->topk_func->topk_val, topk_per_iter * topk_per_iter, topk_per_iter);
+
+            cudaMemcpy(this->tmp_mask_2d, this->eagle_mask_2d, topk_per_iter * sizeof(uint64_t), cudaMemcpyDeviceToDevice);
+            set_parent(calc_stream, topk_per_iter, this->tired_history_parent + (d - 1) * topk_per_iter, this->topk_func_2->topk_pos, topk_per_iter + (d - 1) * topk_per_iter * topk_per_iter);
+            update_tree(calc_stream, topk_per_iter, topk_per_iter * d, this->eagle_mask_2d, this->tmp_mask_2d, this->topk_func_2->topk_pos);
+            remap_hidden(calc_stream, topk_per_iter, this->model->hidden_size, this->topk_func_2->topk_pos, this->fc2->output, this->fc1->output, topk_per_iter);
+
+            remap_id(
+                calc_stream,
+                topk_per_iter,
+                this->topk_func_2->topk_pos,
+                this->topk_func->topk_pos,
+                this->context_token_ids
+            );
         }
 
+        this->topk_func_2->prefill(calc_stream, 1, this->tired_history_val);
+
+        // build tree
+        build_dynamic_tree(calc_stream, this->tree_size, this->eagle_original_length[0], this->topk_per_iter, this->tired_history_parent, this->topk_func_2->topk_pos, tree_position_ids, tree_attn_mask, tree_parent);
+        remap_id(calc_stream, this->tree_size-1, this->topk_func_2->topk_pos, this->tired_history_pos, this->context_token_ids, tree_draft_ids + 1);
+        this->is_first_draft = false;
+    }
+
+    void draft_indexed_gemm(int32_t* tree_draft_ids, int32_t* tree_position_ids, int32_t* cache_length, uint64_t* tree_attn_mask, int32_t* tree_parent, int32_t* context_tokens, int32_t context_length) {
         cudaMemcpy(this->eagle_original_length, cache_length, sizeof(int32_t), cudaMemcpyDeviceToHost);
         this->eagle_padded_length = (this->eagle_original_length[0] + 256 - 1) / 128 * 128;
 
@@ -601,6 +692,143 @@ struct EagleImpl : Model {
         this->is_first_draft = false;
     }
 
+    void draft(int32_t* tree_draft_ids, int32_t* tree_position_ids, int32_t* cache_length, uint64_t* tree_attn_mask, int32_t* tree_parent, int32_t* context_tokens, int32_t context_length, int32_t mode) {
+        if (mode == 0) {
+            // context_length == -1, frspec, fix vocab
+            draft_frspec(tree_draft_ids, tree_position_ids, cache_length, tree_attn_mask, tree_parent);
+            return;
+        } else if (mode == 1) {
+            // ours, indexed gemm
+            draft_indexed_gemm(tree_draft_ids, tree_position_ids, cache_length, tree_attn_mask, tree_parent, context_tokens, context_length);
+            return;
+        } else if (mode == 2) {
+            // ours, prefetch
+            draft_prefetch(tree_draft_ids, tree_position_ids, cache_length, tree_attn_mask, tree_parent, context_tokens, context_length);
+            return;
+        } 
+        else {
+            printf("Error: Unknown draft mode.\n");
+            return;
+        }
+
+        cudaMemcpy(this->eagle_original_length, cache_length, sizeof(int32_t), cudaMemcpyDeviceToHost);
+        this->eagle_padded_length = (this->eagle_original_length[0] + 256 - 1) / 128 * 128;
+
+        if (this->is_first_draft) {
+            this->model->embedding->prefill(calc_stream, 1, tree_draft_ids);
+            this->eagle_prefill(this->num_history_tokens);
+        } else {
+            this->eagle_decode(cache_length);
+        }
+        cudaMemcpy(this->eagle_cache_length, cache_length, sizeof(int32_t), cudaMemcpyDeviceToDevice);
+        cudaMemcpy(this->eagle_position_ids, cache_length, sizeof(int32_t), cudaMemcpyDeviceToDevice);
+        cudaMemcpy(this->context_token_ids, context_tokens, context_length * sizeof(int32_t), cudaMemcpyDeviceToDevice);
+        repeat(calc_stream, topk_per_iter, 1, 0, this->eagle_position_ids);
+
+        cudaStreamWaitEvent(calc_stream.stream, copy_event, 0); 
+
+        { // d = 0
+            // launch_repack_weights<T>(calc_stream, context_length, this->lm_head->dim_in, this->context_token_ids, this->model->lm_head->weight, this->repack_buffer);
+            // this->model->lm_head->prefill_repack_sync(calc_stream, 1, this->fc2->output + (num_prev - 1) * this->model->hidden_size, this->repack_buffer, this->eagle_logits);
+        
+            this->model->lm_head->prefill_repack_sync(
+                calc_stream,
+                1,                       // N
+                context_length,
+                this->fc2->output + (num_prev - 1) * this->model->hidden_size,   // Input A [N, H]
+                this->repack_buffer,     // [K, V]
+                this->eagle_logits       // Output C [N, K]
+            );
+
+            // this->model->lm_head->prefill_gathered(calc_stream, this->fc2->output + (num_prev - 1) * this->model->hidden_size, this->context_token_ids, context_length, this->eagle_logits);
+
+            log_softmax(calc_stream, 1, context_length, this->eagle_logits);
+
+            this->topk_func->prefill(calc_stream, 1, this->eagle_logits, context_length);
+            cudaMemcpy(this->tired_history_val, this->topk_func->topk_val, topk_per_iter * sizeof(T), cudaMemcpyDeviceToDevice);
+            cudaMemcpy(this->tired_history_pos, this->topk_func->topk_pos, topk_per_iter * sizeof(int32_t), cudaMemcpyDeviceToDevice);
+
+            remap(calc_stream, topk_per_iter, this->topk_func->topk_pos, this->topk_func_2->topk_pos, this->context_token_ids);
+            
+            cudaMemcpy(this->topk_func_2->topk_val, this->topk_func->topk_val, topk_per_iter * sizeof(T), cudaMemcpyDeviceToDevice);
+            repeat(calc_stream, topk_per_iter, this->model->hidden_size, num_prev-1, this->fc2->output, this->fc1->output);
+            init_tree(calc_stream, topk_per_iter, this->eagle_mask_2d);
+        }
+        for (int d = 1; d < this->num_iter; ++d) {
+            add(calc_stream, 1, this->eagle_cache_length, topk_per_iter);
+            this->model->embedding->prefill(calc_stream, topk_per_iter, this->topk_func_2->topk_pos);
+            this->fc2->prefill(calc_stream, topk_per_iter, this->fc1->output);
+            this->fc1->prefill(calc_stream, topk_per_iter, this->model->embedding->output);
+            elementwise_add(calc_stream, topk_per_iter, this->model->hidden_size, this->fc1->output, this->fc2->output, this->fc2->output);
+            T* layer_output = nullptr;
+            for (int i = 0; i < num_layers; i++) {
+                this->layers[i]->decode(topk_per_iter, this->eagle_padded_length, this->fc2->output, layer_output, this->eagle_position_ids, this->eagle_cache_length, Mask(eagle_mask_2d, topk_per_iter, topk_per_iter * d), this->kv_caches->caches[i]);
+                layer_output = this->layers[i]->output;
+            }
+            elementwise_add(calc_stream, topk_per_iter, this->model->hidden_size, this->fc2->output, layer_output, this->fc2->output);
+            add(calc_stream, topk_per_iter, this->eagle_position_ids, 1);
+
+            // lm_head->prefill(calc_stream, topk_per_iter, this->fc2->output, this->eagle_logits);
+
+            // this->model->lm_head->prefill_gathered_batched(
+            //     calc_stream,
+            //     topk_per_iter,           // N
+            //     this->fc2->output,       // Input A [N, H]
+            //     this->context_token_ids, // indices [K]
+            //     context_length,          // K
+            //     this->eagle_logits       // Output C [N, K]
+            // );
+
+            this->model->lm_head->prefill_repack_sync(
+                calc_stream,
+                topk_per_iter,           // N
+                context_length,
+                this->fc2->output,       // Input A [N, H]
+                this->repack_buffer,     // [H, K]
+                this->eagle_logits       // Output C [N, K]
+            );
+
+            for (int i = 0; i < topk_per_iter; i++) {
+                this->model->lm_head->prefill_gathered(
+                    calc_stream,
+                    this->fc2->output + i * this->model->hidden_size, // input: 第 i 个 hidden state
+                    this->context_token_ids,
+                    context_length,
+                    this->eagle_logits + i * context_length
+                );    
+            }
+            log_softmax(calc_stream, topk_per_iter, context_length, this->eagle_logits);
+
+            this->topk_func->prefill(calc_stream, topk_per_iter, this->eagle_logits, context_length);
+            cumsum(calc_stream, topk_per_iter, topk_per_iter, this->topk_func->topk_val, this->topk_func_2->topk_val);
+            cudaMemcpy(this->tired_history_val + topk_per_iter + (d - 1) * topk_per_iter * topk_per_iter, this->topk_func->topk_val, topk_per_iter * topk_per_iter * sizeof(T), cudaMemcpyDeviceToDevice);
+            cudaMemcpy(this->tired_history_pos + topk_per_iter + (d - 1) * topk_per_iter * topk_per_iter, this->topk_func->topk_pos, topk_per_iter * topk_per_iter * sizeof(int32_t), cudaMemcpyDeviceToDevice);
+            this->topk_func_2->prefill(calc_stream, 1, this->topk_func->topk_val, topk_per_iter * topk_per_iter, topk_per_iter);
+
+            cudaMemcpy(this->tmp_mask_2d, this->eagle_mask_2d, topk_per_iter * sizeof(uint64_t), cudaMemcpyDeviceToDevice);
+            set_parent(calc_stream, topk_per_iter, this->tired_history_parent + (d - 1) * topk_per_iter, this->topk_func_2->topk_pos, topk_per_iter + (d - 1) * topk_per_iter * topk_per_iter);
+            update_tree(calc_stream, topk_per_iter, topk_per_iter * d, this->eagle_mask_2d, this->tmp_mask_2d, this->topk_func_2->topk_pos);
+            remap_hidden(calc_stream, topk_per_iter, this->model->hidden_size, this->topk_func_2->topk_pos, this->fc2->output, this->fc1->output, topk_per_iter);
+
+            remap_id(
+                calc_stream,
+                topk_per_iter,
+                this->topk_func_2->topk_pos,
+                this->topk_func->topk_pos,
+                this->context_token_ids
+            );
+        }
+
+        this->topk_func_2->prefill(calc_stream, 1, this->tired_history_val);
+
+        // build tree
+        build_dynamic_tree(calc_stream, this->tree_size, this->eagle_original_length[0], this->topk_per_iter, this->tired_history_parent, this->topk_func_2->topk_pos, tree_position_ids, tree_attn_mask, tree_parent);
+
+        remap_id(calc_stream, this->tree_size-1, this->topk_func_2->topk_pos, this->tired_history_pos, this->context_token_ids, tree_draft_ids + 1);
+
+        this->is_first_draft = false;
+    }
+
     int verify(int32_t num_tokens, int32_t* pred, int32_t* gt, int32_t* position_ids, int32_t* cache_length, uint64_t* mask_2d, int32_t* tree_parent) {
         verify_draft(calc_stream, num_tokens, pred, gt, position_ids, cache_length, mask_2d, tree_parent, this->d_best);
         cudaMemcpyAsync(this->h_best, this->d_best, 2 * sizeof(int32_t), cudaMemcpyDeviceToHost, calc_stream.stream);
@@ -617,5 +845,29 @@ struct EagleImpl : Model {
         make_arange(calc_stream, this->num_prev, cache_length, this->eagle_position_ids);
 
         return h_best[0];
+    }
+
+    void async_prefetch(int32_t* gpu_context_buffer, int32_t* cpu_new_tokens, int32_t num_new, int32_t offset) {
+        // 1. 异步 H2D 拷贝：把新增的 token ID 拷到 GPU context buffer 的末尾
+        cudaMemcpyAsync(
+            gpu_context_buffer + offset, // 目标地址偏移
+            cpu_new_tokens,              // 源地址
+            num_new * sizeof(int32_t),   // 大小
+            cudaMemcpyHostToDevice,      // 类型
+            copy_stream.stream                  // 【关键】指定拷贝流
+        );
+
+        // 2. 异步启动 Repack Kernel：只拷贝新增的那几行权重
+        launch_repack_weights_incremental(
+            copy_stream,
+            num_new,                     // 拷贝行数 K
+            this->model->hidden_size,    // H
+            gpu_context_buffer + offset, // 增量 indices 指针
+            this->model->lm_head->weight,// 源权重
+            this->repack_buffer + (int64_t)offset * this->model->hidden_size // 【关键】目标 buffer 偏移
+        );
+
+        // 3. 记录事件：标记所有拷贝操作（H2D + Kernel）已提交到硬件
+        cudaEventRecord(copy_event, copy_stream.stream);
     }
 };

@@ -15,6 +15,8 @@ struct Stream {
 };
 
 extern Stream calc_stream;
+extern Stream copy_stream;
+extern cudaEvent_t copy_event;
 
 extern int graphCreated_padding_length;
 extern int graphCreated_input_length;

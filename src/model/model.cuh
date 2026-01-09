@@ -17,8 +17,9 @@ struct Model {
     virtual void prefill(int32_t num_tokens, int32_t num_history_tokens, int32_t* input, int32_t* position_ids, void* output) = 0;
     virtual void decode(int32_t num_tokens, int32_t padded_length, int32_t* input, int32_t* position_ids, int32_t* cache_length, uint64_t* mask_2d, void* output) = 0;
 
-    virtual void draft(int32_t *tree_draft_ids, int32_t *tree_position_ids, int32_t *cache_length, uint64_t* attn_mask, int32_t* tree_parent, int32_t* context_tokens, int32_t context_length) = 0;
+    virtual void draft(int32_t *tree_draft_ids, int32_t *tree_position_ids, int32_t *cache_length, uint64_t* attn_mask, int32_t* tree_parent, int32_t* context_tokens, int32_t context_length, int32_t mode) = 0;
     virtual int verify(int32_t num_tokens, int32_t* pred, int32_t* gt, int32_t* position_ids, int32_t* cache_length, uint64_t* attn_mask, int32_t* tree_parent) = 0;
+    virtual void async_prefetch(int32_t* gpu_context_buffer, int32_t* cpu_new_tokens, int32_t num_new, int32_t offset) = 0;
     /* verify should find max accept length (based on tree_parent and position_ids) and return, fix kvcache (based on position_ids), and make pred[:accept_length] the accept path (based on attn_mask and position_ids) */
 };
 
@@ -164,6 +165,7 @@ struct ModelImpl : Model {
         decode_embed(num_tokens, padded_length, this->embedding->output, position_ids, cache_length, mask_2d, output);
     }
 
-    void draft(int32_t *tree_draft_ids, int32_t *tree_position_ids, int32_t *cache_length, uint64_t* attn_mask, int32_t* tree_parent, int32_t* context_tokens, int32_t context_length) { throw std::runtime_error("Draft is not supported"); }
+    void draft(int32_t *tree_draft_ids, int32_t *tree_position_ids, int32_t *cache_length, uint64_t* attn_mask, int32_t* tree_parent, int32_t* context_tokens, int32_t context_length, int32_t mode) { throw std::runtime_error("Draft is not supported"); }
     int verify(int32_t num_tokens, int32_t* pred, int32_t* gt, int32_t* position_ids, int32_t* cache_length, uint64_t* attn_mask, int32_t* tree_parent) { throw std::runtime_error("Verify is not supported"); }
+    void async_prefetch(int32_t* gpu_context_buffer, int32_t* cpu_new_tokens, int32_t num_new, int32_t offset) { throw std::runtime_error("async_prefetch is not supported"); }
 };
