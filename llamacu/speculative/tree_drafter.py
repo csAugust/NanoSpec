@@ -104,8 +104,8 @@ class LLM_with_tree_drafter(LLM):
             # assert(hasattr(self, 'token_id_remap'))
             # self.context_tokens_tensor = self.token_id_remap
 
-            print(f'Limited max vocab context: {self.max_context_tokens}')
-            print(f'Limited vocab context: {context_length}')
+            # print(f'Limited max vocab context: {self.max_context_tokens}')
+            # print(f'Limited vocab context: {context_length}')
 
         self.tree_draft_ids[:1].copy_(logits[prefix_length-1].argmax(dim=-1))
 
@@ -116,7 +116,7 @@ class LLM_with_tree_drafter(LLM):
         model_step = 0
         terminal = False
 
-        COPY = True and not is_warmup
+        COPY = False and not is_warmup
         def _load(name_, dtype_=np.int32, device_=input_ids.device):
             x = np.loadtxt(f'{name_}.txt', dtype=dtype_)
             return torch.from_numpy(x).to(device_)
@@ -190,10 +190,12 @@ class LLM_with_tree_drafter(LLM):
                             self.context_tokens_tensor.data_ptr(),  # 目标 GPU buffer 地址
                             new_tokens_tensor_cpu.data_ptr(),       # 源 CPU 数据地址
                             len(new_tokens_tensor_cpu),             # 增量大小
-                            context_length,                         # 偏移量 (当前长度)
+                            context_length % self.max_context_tokens,  # 偏移量 (当前长度)
                         )
                         torch.cuda.nvtx.range_pop()
                     context_length = new_context_length
+                    # if context_length > self.max_context_tokens:
+                    #     print(f"{context_length} exceeds {self.max_context_tokens}")
 
             tokens[1+i:1+i+append_length].copy_(self.tree_draft_ids[:append_length])
             self.tree_draft_ids[0] = self.tree_draft_ids[accept_length - 1]

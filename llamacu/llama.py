@@ -59,7 +59,7 @@ class LLM(torch.nn.Module):
         )
 
         # self.logits = torch.empty((64, self.config.vocab_size), dtype=self.dtype, device="cuda")
-        self.logits = torch.empty((1024, self.config.vocab_size), dtype=self.dtype, device="cuda")
+        self.logits = torch.empty((2048, self.config.vocab_size), dtype=self.dtype, device="cuda")
 
     def init_storage(self):
         self.max_total_length = C.init_storage()

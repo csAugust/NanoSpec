@@ -269,7 +269,7 @@ struct EagleImpl : Model {
     int V;
 
     int32_t *context_token_ids;
-    int max_context_tokens = 1024;
+    int32_t max_context_tokens;
     T* repack_buffer;
 
     int32_t *h_best, *d_best;    

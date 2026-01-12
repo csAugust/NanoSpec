@@ -6,6 +6,18 @@
 #include "elementwise.cuh"
 #include "custom/batched_gemv.cuh"
 
+int ceil_to_multiple(int value, int multiple) {
+    if (multiple <= 0) {
+        return value;
+    }
+    int remainder = value % multiple;
+    if (remainder == 0) {
+        return value;
+    }
+    return value + (multiple - remainder) % multiple;
+}
+
+
 // Kernel implementation using Warp-level primitives
 template <typename T, bool has_bias>
 __global__ void gather_gemv_warp_reduction_kernel(
@@ -187,6 +199,8 @@ struct Linear {
     }
 
     void prefill_repack_sync(const Stream& stream, int32_t num_tokens, int32_t effective_dim_out, T* input, T* repack_weight, T* tgt=nullptr, bool inplace=false) {
+        // int32_t padded_dim_out = ceil_to_multiple(effective_dim_out, 64);
+        // linear<T, transposed>(stream, num_tokens, dim_in, padded_dim_out, input, repack_weight, tgt, inplace);
         linear<T, transposed>(stream, num_tokens, dim_in, effective_dim_out, input, repack_weight, tgt, inplace);
     }
 

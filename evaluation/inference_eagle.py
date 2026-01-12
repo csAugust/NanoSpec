@@ -134,8 +134,8 @@ if __name__ == "__main__":
     config = AutoConfig.from_pretrained(args.model_path)
     max_length = min(args.max_length, config.max_position_embeddings)
 
-    # FAKE_V=args.V
-    FAKE_V=4096
+    FAKE_V=args.V
+    # FAKE_V=4096
     model = LLM_with_eagle(
         base_path=args.model_path,
         eagle_path=args.eagle_path,
@@ -146,7 +146,7 @@ if __name__ == "__main__":
         cuda_graph=args.cuda_graph,
         num_iter=args.eagle_num_iter,
         tree_size=args.eagle_tree_size,
-        max_context_tokens=4096,
+        max_context_tokens=3072,
     )
     model.init_storage()
     if args.V != -1:

@@ -166,6 +166,7 @@ def get_model_answers(
     print('Warmup done')
 
     accept_lengths_tree = []
+    generate_speed_tree = []
     for question in tqdm(questions):
 
         choices = []
@@ -236,6 +237,7 @@ def get_model_answers(
                 new_tokens.append(int(new_token))
                 wall_time.append(total_time)
                 generate_speed.append(int(new_token) / total_time)
+                generate_speed_tree.append(generate_speed)
                 cur_accept_lengths_tree.extend(accept_length_tree)
                 messages.append({
                     "role": "assistant",
@@ -243,7 +245,7 @@ def get_model_answers(
                 })
             # torch.cuda.empty_cache()
             choices.append({"index": i, "turns": turns, "decoding_steps": steps, "new_tokens": new_tokens, "wall_time": wall_time,
-                            "accept_lengths": cur_accept_lengths_tree, "generate_speed": generate_speed})
+                            "accept_lengths": cur_accept_lengths_tree, "generate_speed": generate_speed, "avg_accept_length": sum(cur_accept_lengths_tree)/len(cur_accept_lengths_tree)})
 
         # Dump answers
         os.makedirs(os.path.dirname(answer_file), exist_ok=True)
@@ -258,6 +260,7 @@ def get_model_answers(
             }
             fout.write(json.dumps(ans_json) + "\n")
     print("#Mean accepted tokens: ", np.mean(accept_lengths_tree))
+    print("#Mean accepted speed: ", np.mean(generate_speed_tree))
 
 
 def reorg_answer_file(answer_file):

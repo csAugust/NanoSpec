@@ -13,6 +13,6 @@ python3 evaluation/inference_eagle.py \
     --bench-name $Bench_name \
     --dtype "float16" \
     --chat-template "llama-3" \
-    --question-end 1 \
-    --max-new-tokens 128 \
+    --question-end 1000 \
+    --max-new-tokens 1024 \
 
