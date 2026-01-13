@@ -116,7 +116,7 @@ def get_model_answers(
             # try:
             torch.cuda.synchronize()
             start_time = time.time()
-            output_ids, new_token, step, accept_length_tree = forward_func(
+            output_ids, new_token, step, accept_length_tree, draft_time_list = forward_func(
                 inputs,
                 model,
                 tokenizer,
@@ -167,11 +167,13 @@ def get_model_answers(
 
     accept_lengths_tree = []
     generate_speed_tree = []
+    draft_time_tree = []
     for question in tqdm(questions):
 
         choices = []
         for i in range(num_choices):
             cur_accept_lengths_tree = []
+            cur_draft_time_tree = []
             torch.manual_seed(i)
             messages = [
                 {"role": "system",
@@ -197,7 +199,7 @@ def get_model_answers(
                 # try:
                 torch.cuda.synchronize()
                 start_time = time.time()
-                output_ids, new_token, step, accept_length_tree = forward_func(
+                output_ids, new_token, step, accept_length_tree, draft_time_list = forward_func(
                     inputs,
                     model,
                     tokenizer,
@@ -210,6 +212,7 @@ def get_model_answers(
                 torch.cuda.synchronize()
                 total_time = time.time() - start_time
                 accept_lengths_tree.extend(accept_length_tree)
+                draft_time_tree.extend(draft_time_list)
 
                 if teminators:
                     stop_token_ids_index = [
@@ -239,13 +242,15 @@ def get_model_answers(
                 generate_speed.append(int(new_token) / total_time)
                 generate_speed_tree.append(generate_speed)
                 cur_accept_lengths_tree.extend(accept_length_tree)
+                cur_draft_time_tree.extend(draft_time_list)
                 messages.append({
                     "role": "assistant",
                     "content": output
                 })
             # torch.cuda.empty_cache()
             choices.append({"index": i, "turns": turns, "decoding_steps": steps, "new_tokens": new_tokens, "wall_time": wall_time,
-                            "accept_lengths": cur_accept_lengths_tree, "generate_speed": generate_speed, "avg_accept_length": sum(cur_accept_lengths_tree)/len(cur_accept_lengths_tree)})
+                            "accept_lengths": cur_accept_lengths_tree, "generate_speed": generate_speed, "avg_accept_length": sum(cur_accept_lengths_tree)/len(cur_accept_lengths_tree),
+                            "total_draft_time": sum(cur_draft_time_tree), "avg_draft_time": 0 if len(cur_draft_time_tree)==0 else sum(cur_draft_time_tree)/len(cur_draft_time_tree)})
 
         # Dump answers
         os.makedirs(os.path.dirname(answer_file), exist_ok=True)

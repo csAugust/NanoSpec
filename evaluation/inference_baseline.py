@@ -8,7 +8,7 @@ from transformers import AutoTokenizer, AutoConfig
 from llamacu.llama import LLM
 
 
-def baseline_forward(inputs, model, tokenizer, max_new_tokens, max_length, teminators):
+def baseline_forward(inputs, model, tokenizer, max_new_tokens, max_length, teminators, is_warmup=False):
     input_ids = inputs.input_ids.int()
 
     prefill_length = len(input_ids[0])
@@ -24,7 +24,7 @@ def baseline_forward(inputs, model, tokenizer, max_new_tokens, max_length, temin
     new_token = len(output_ids)
     step = new_token
     accept_length_list = [1] * new_token
-    return output_ids, new_token, step, accept_length_list
+    return output_ids, new_token, step, accept_length_list, []
 
 
 if __name__ == "__main__":

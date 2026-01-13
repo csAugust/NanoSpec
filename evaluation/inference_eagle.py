@@ -14,7 +14,7 @@ def eagle_forward(inputs, model, tokenizer, max_new_tokens, max_length, teminato
     max_new_tokens = min(max_new_tokens, max_length - prefill_length)
     
     # generate
-    output_ids, accept_length_list, model_step = model.generate(
+    output_ids, accept_length_list, model_step, draft_time_list = model.generate(
         input_ids=input_ids,
         generation_length=max_new_tokens,
         teminators=teminators,
@@ -23,7 +23,7 @@ def eagle_forward(inputs, model, tokenizer, max_new_tokens, max_length, teminato
     )
 
     new_token = len(output_ids)
-    return output_ids, new_token, model_step, accept_length_list
+    return output_ids, new_token, model_step, accept_length_list, draft_time_list
 
 
 if __name__ == "__main__":
@@ -146,7 +146,7 @@ if __name__ == "__main__":
         cuda_graph=args.cuda_graph,
         num_iter=args.eagle_num_iter,
         tree_size=args.eagle_tree_size,
-        max_context_tokens=3072,
+        max_context_tokens=2048,
     )
     model.init_storage()
     if args.V != -1:
