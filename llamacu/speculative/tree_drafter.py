@@ -72,8 +72,8 @@ class LLM_with_tree_drafter(LLM):
         if MODE != 0:
             topk_indices = torch.topk(logits, k=3, dim=-1).indices
             combined_candidates_gpu = torch.cat([input_ids.view(-1), topk_indices.view(-1)])
-            combined_candidates_gpu = input_ids.view(-1)
-            unique_candidates_gpu = torch.unique(combined_candidates_gpu, sorted=True)
+            # combined_candidates_gpu = input_ids.view(-1)
+            unique_candidates_gpu = torch.unique(combined_candidates_gpu)
             new_tokens_set = set(unique_candidates_gpu.tolist())
 
             # context_tokens = input_ids[0].tolist()
@@ -83,7 +83,7 @@ class LLM_with_tree_drafter(LLM):
             #     context_tokens += topk_tokens.tolist()
             # context_tokens = sorted(list(set(context_tokens)))
             # new_tokens_set = set(context_tokens)
-            new_tokens_tensor_cpu, new_context_length = self.update_context_new(new_tokens_set)
+            new_tokens_tensor_cpu, new_context_length = self.update_context_new(new_tokens_set, MODE)
             if new_tokens_tensor_cpu is not None:
                 if MODE >= 2:
                     torch.cuda.nvtx.range_push(f"prefetch")
@@ -96,17 +96,6 @@ class LLM_with_tree_drafter(LLM):
                     torch.cuda.nvtx.range_pop()
                 context_length = new_context_length
 
-            # use full vocab
-            # assert(hasattr(self, 'V'))
-            # self.context_tokens_tensor = torch.range(0, self.V - 1, dtype=torch.int32, device="cuda")
-
-            # use high-freq vocab
-            # assert(hasattr(self, 'token_id_remap'))
-            # self.context_tokens_tensor = self.token_id_remap
-
-            # print(f'Limited max vocab context: {self.max_context_tokens}')
-            # print(f'Limited vocab context: {context_length}')
-
         self.tree_draft_ids[:1].copy_(logits[prefix_length-1].argmax(dim=-1))
 
         tokens = torch.empty((generation_length), dtype=torch.int32, device="cuda")
@@ -116,47 +105,19 @@ class LLM_with_tree_drafter(LLM):
         model_step = 0
         terminal = False
 
-        COPY = False and not is_warmup
-        def _load(name_, dtype_=np.int32, device_=input_ids.device):
-            x = np.loadtxt(f'{name_}.txt', dtype=dtype_)
-            return torch.from_numpy(x).to(device_)
-        if COPY:
-            copy_time_stat = []
-            start_time = time.time()
-            step_draft_tokens_record_tensor = _load('step_draft_tokens')
-            step_tree_position_ids_record_tensor = _load('step_tree_position_ids')
-            step_tree_attn_masks_record_tensor = _load('step_tree_attn_masks', np.uint64)
-            step_tree_parents_record_tensor = _load('step_tree_parents')
-            copy_time_stat.append(time.time() - start_time)
-            
-        SAVE = False
-        step_draft_tokens = []
-        step_tree_position_ids = []
-        step_tree_attn_masks = []
-        step_tree_parents = []
+        step_draft_times = []
 
         while i < generation_length-1 and not terminal:
             self.cache_length[0] = prefix_length + i
 
+            start_time = time.time()
             torch.cuda.nvtx.range_push(f"draft")
             C.draft(self.tree_draft_ids.data_ptr(), self.tree_position_ids.data_ptr(), self.cache_length.data_ptr(),
                     self.tree_attn_mask.data_ptr(), self.tree_parent.data_ptr(),
                     self.context_tokens_tensor.data_ptr(), context_length, MODE)
             torch.cuda.nvtx.range_pop()
-
-            if SAVE:
-                step_draft_tokens.append(self.tree_draft_ids.tolist())
-                step_tree_position_ids.append(self.tree_position_ids.tolist())
-                step_tree_attn_masks.append(self.tree_attn_mask.tolist())
-                step_tree_parents.append(self.tree_parent.tolist())
-            
-            if COPY and model_step < step_draft_tokens_record_tensor.shape[0]:
-                start_time = time.time()
-                self.tree_draft_ids.copy_(step_draft_tokens_record_tensor[model_step])
-                self.tree_position_ids.copy_(step_tree_position_ids_record_tensor[model_step])
-                self.tree_attn_mask.copy_(step_tree_attn_masks_record_tensor[model_step])
-                self.tree_parent.copy_(step_tree_parents_record_tensor[model_step])
-                copy_time_stat.append(time.time() - start_time)
+            total_time = time.time() - start_time
+            step_draft_times.append(total_time)
 
             logits = self.decode(self.tree_draft_ids, self.tree_position_ids, self.cache_length, mask_2d=self.tree_attn_mask)
             self.tree_gt_ids.copy_(logits.argmax(dim=-1))
@@ -177,12 +138,17 @@ class LLM_with_tree_drafter(LLM):
             append_length = min(accept_length, generation_length - 1 - i)
 
             if MODE != 0:
+                # topk_indices = torch.topk(logits, k=3, dim=-1).indices
+                # combined_candidates_gpu = torch.cat([self.tree_draft_ids.view(-1), topk_indices.view(-1)])
+                # unique_candidates_gpu = torch.unique(combined_candidates_gpu)
+                # new_tokens_set = set(unique_candidates_gpu.tolist())
+
                 combined_ids_gpu = torch.cat([self.tree_draft_ids.view(-1), self.tree_gt_ids.view(-1)])
                 unique_ids_gpu = torch.unique(combined_ids_gpu)
                 new_tokens_set = set(unique_ids_gpu.tolist())
 
                 # new_tokens_set = set(self.tree_draft_ids.view(-1).tolist() + self.tree_gt_ids.view(-1).tolist())
-                new_tokens_tensor_cpu, new_context_length = self.update_context_new(new_tokens_set)
+                new_tokens_tensor_cpu, new_context_length = self.update_context_new(new_tokens_set, MODE)
                 if new_tokens_tensor_cpu is not None:
                     if MODE >= 2:
                         torch.cuda.nvtx.range_push(f"prefetch")
@@ -194,31 +160,18 @@ class LLM_with_tree_drafter(LLM):
                         )
                         torch.cuda.nvtx.range_pop()
                     context_length = new_context_length
-                    # if context_length > self.max_context_tokens:
-                    #     print(f"{context_length} exceeds {self.max_context_tokens}")
 
             tokens[1+i:1+i+append_length].copy_(self.tree_draft_ids[:append_length])
             self.tree_draft_ids[0] = self.tree_draft_ids[accept_length - 1]
             i += accept_length
 
         tokens = tokens[:1+i].tolist()
-        if SAVE:
-            def _save(tensor_, name_, dtype_=torch.int32):
-                tensor_ = torch.tensor(tensor_, dtype=dtype_).cpu().numpy()
-                # tensor_.tofile('step_draft_tokens.bin')
-                np.savetxt(f'{name_}.txt', tensor_, fmt='%d')
-            _save(step_draft_tokens, "step_draft_tokens")
-            _save(step_tree_position_ids, "step_tree_position_ids")
-            _save(step_tree_attn_masks, "step_tree_attn_masks", torch.uint64)
-            _save(step_tree_parents, "step_tree_parents")
-        if COPY:
-            print("Copy overhead: ", sum(copy_time_stat))
         
         self.context_tokens_set.clear()
         self.context_tokens_tensor = torch.empty((self.max_context_tokens), dtype=torch.int32, device="cuda")
-        return tokens, accept_lengths, model_step
+        return tokens, accept_lengths, model_step, step_draft_times
     
-    def update_context_new(self, new_tokens_set):
+    def update_context_new(self, new_tokens_set, mode=0):
         old_context_length = len(self.context_tokens_set)
         real_new_tokens_set = new_tokens_set.difference(self.context_tokens_set)
 
@@ -227,7 +180,9 @@ class LLM_with_tree_drafter(LLM):
 
         self.context_tokens_set.update(real_new_tokens_set)
         real_new_tokens_tensor = torch.tensor(list(real_new_tokens_set), dtype=torch.int32, device='cpu')
-        
+        new_context_length = len(self.context_tokens_set)
+        if mode == 1:
+            self.context_tokens_tensor[old_context_length:new_context_length].copy_(real_new_tokens_tensor)
         # print(f"New tokens ({old_context_length} -> {len(self.context_tokens_set)}): {real_new_tokens_set}")
-        return real_new_tokens_tensor, len(self.context_tokens_set)
+        return real_new_tokens_tensor, new_context_length
     

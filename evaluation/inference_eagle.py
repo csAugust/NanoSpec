@@ -146,7 +146,7 @@ if __name__ == "__main__":
         cuda_graph=args.cuda_graph,
         num_iter=args.eagle_num_iter,
         tree_size=args.eagle_tree_size,
-        max_context_tokens=2048,
+        max_context_tokens=3072,
     )
     model.init_storage()
     if args.V != -1:
