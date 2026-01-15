@@ -16,9 +16,9 @@ python3 evaluation/inference_eagle.py \
     --chat-template "qwen2" \
     --eagle-num-iter 6 \
     --eagle-tree-size 60 \
-    --question-end 1 \
+    --question-end 1000 \
     --max-new-tokens 1024 \
     --V $Vocab \
-    --mode 2
+    --mode 0
 
 

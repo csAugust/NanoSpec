@@ -32,7 +32,7 @@ PAPER_SPEED_FRSPEC = {
     'QA': 84.61, 'Summ.': 83.46, 'Code': 81.60, 'Average': 89.83
 }
 
-def generate_simulated_baseline_data(existing_df, baseline_label_param, new_label="DynaSpec (Simulated)"):
+def generate_simulated_baseline_data(existing_df, baseline_label_param, ratio_factor=1.0, sim_accept_length=1.0, new_label="DynaSpec (Simulated)"):
     """
     基于论文数据和已有的基线数据，生成模拟的 Baseline 数据行。
     
@@ -59,6 +59,7 @@ def generate_simulated_baseline_data(existing_df, baseline_label_param, new_labe
     # 这里的均值用于代表该基线的“典型性能”
     ref_avg_speed = reference_df.groupby('category')['generate_speed'].mean()
     ref_avg_decoding_speed = reference_df.groupby('category')['decoding_speed'].mean()
+    ref_avg_acc_length = reference_df.groupby('category')['avg_accept_length'].mean()
     
     # 获取所有涉及的 category
     categories = ref_avg_speed.index.tolist()
@@ -66,27 +67,29 @@ def generate_simulated_baseline_data(existing_df, baseline_label_param, new_labe
     for cat in categories:
         # 3. 获取论文对应的列名
         # 如果找不到映射，就使用 'Average' 列的数据
-        paper_col = CATEGORY_MAP.get(cat, 'Average') 
+        # paper_col = CATEGORY_MAP.get(cat, 'Average') 
         
-        # 获取论文中的接受长度
-        sim_accept_length = PAPER_ACCEPT_LENGTH.get(paper_col, PAPER_ACCEPT_LENGTH['Average'])
+        # # 获取论文中的接受长度
+        # sim_accept_length = PAPER_ACCEPT_LENGTH.get(paper_col, PAPER_ACCEPT_LENGTH['Average'])
         
-        # 4. 计算速度比例因子 (DynaSpec / FR-Spec)
-        speed_dyna = PAPER_SPEED_DYNASPEC.get(paper_col, PAPER_SPEED_DYNASPEC['Average'])
-        speed_fr = PAPER_SPEED_FRSPEC.get(paper_col, PAPER_SPEED_FRSPEC['Average'])
+        # # 4. 计算速度比例因子 (DynaSpec / FR-Spec)
+        # speed_dyna = PAPER_SPEED_DYNASPEC.get(paper_col, PAPER_SPEED_DYNASPEC['Average'])
+        # speed_fr = PAPER_SPEED_FRSPEC.get(paper_col, PAPER_SPEED_FRSPEC['Average'])
         
-        ratio_factor = 1.0
-        if speed_fr != 0:
-            ratio_factor = speed_dyna / speed_fr
+        # ratio_factor = 1.0
+        # if speed_fr != 0:
+        #     ratio_factor = speed_dyna / speed_fr
         
         # 获取参考基线的实际平均速度
         base_speed = ref_avg_speed.get(cat)
         base_decoding_speed = ref_avg_decoding_speed.get(cat)
+        base_acc_length = ref_avg_acc_length.get(cat)
         
         if base_speed is not None and np.isfinite(base_speed):
             # 5. 计算模拟速度 = 实际基线速度 * 论文比例因子
             sim_speed = base_speed * ratio_factor
             sim_decoding_speed = base_decoding_speed * ratio_factor
+            sim_accept_length = sim_accept_length
             
             # 添加一条模拟数据记录
             # 注意：这里只添加了一条代表均值的记录。
@@ -103,7 +106,7 @@ def generate_simulated_baseline_data(existing_df, baseline_label_param, new_labe
     print(f"Generated {len(simulated_data)} simulated records for '{new_label}'.")
     return simulated_data
 
-def add_labels_to_bars(ax, spacing=5):
+def add_labels_to_bars(ax, spacing=5, detail=True):
     """
     在柱状图上方添加每个柱子的具体数值。
     这个函数基于 matplotlib 的 patches 工作，因此可以直接复用。
@@ -120,7 +123,7 @@ def add_labels_to_bars(ax, spacing=5):
 
         # 在柱子顶部中心绘制文本
         ax.annotate(
-            text=f'{height:.1f}',          # 格式化为两位小数
+            text=f'{height:.2f}' if detail else f'{height:.0f}',          # 格式化为两位小数
             xy=(xy[0] + width / 2, height),# 文本的坐标点（柱子顶部中间）
             xytext=(0, spacing),           # 偏移量（向上移动 spacing 个点）
             textcoords='offset points',    # 坐标系
@@ -177,7 +180,7 @@ def load_single_jsonl(file_path, method_label):
         
     return extracted_data
 
-def plot_grouped_bars(ax, df_pivot, metric_name, ylabel_text, title_text, colors_map):
+def plot_grouped_bars(ax, df_pivot, metric_name, ylabel_text, title_text, colors_map, detail=False):
     """
     使用纯 matplotlib 绘制分组柱状图的核心辅助函数。
     df_pivot: index是category, columns是metric的mean和sem的高等dataframe
@@ -231,7 +234,7 @@ def plot_grouped_bars(ax, df_pivot, metric_name, ylabel_text, title_text, colors
     
     # 调用标签函数
     # 传入更紧凑的 spacing，如果柱子很多，可能还需要调整 label 的字体大小
-    add_labels_to_bars(ax, spacing=3) 
+    add_labels_to_bars(ax, spacing=3, detail=detail) 
 
 
 def visualize_comparison_matplotlib(df, model_id, bench_id):
@@ -251,7 +254,7 @@ def visualize_comparison_matplotlib(df, model_id, bench_id):
 
     # --- 2. 绘图设置 ---
     plt.style.use('seaborn-v0_8-whitegrid') # 使用 matplotlib 内置的类似风格
-    fig, axes = plt.subplots(2, 2, figsize=(20, 8)) # 稍微增加高度给图例
+    fig, axes = plt.subplots(2, 2, figsize=(20 if bench_id == 'spec_bench' else 8, 8)) # 稍微增加高度给图例
 
     # --- 3. 绘制子图 1: Generate Speed ---
     plot_grouped_bars(
@@ -270,7 +273,8 @@ def visualize_comparison_matplotlib(df, model_id, bench_id):
         metric_name='avg_accept_length',
         ylabel_text='Avg Accept Length',
         title_text='Average Accept Length',
-        colors_map=colors_map
+        colors_map=colors_map,
+        detail=True
     )
 
     # --- 4. 绘制子图 2: Avg Accept Length ---
@@ -315,7 +319,7 @@ def visualize_comparison_matplotlib(df, model_id, bench_id):
     bottom_margin = 0.15 + (num_methods // 6) * 0.05 
     plt.subplots_adjust(bottom=bottom_margin)
 
-    output_file = f'{model_id}_{bench_id}.png'
+    output_file = f'figs/{model_id}_{bench_id}.png'
     plt.savefig(output_file, dpi=150, bbox_inches='tight')
     print(f"-"*30)
     print(f"柱状图高度表示平均值 (Mean)。")
@@ -332,36 +336,36 @@ def visualize_comparison_matplotlib(df, model_id, bench_id):
 # 主程序入口
 # ==========================================
 if __name__ == "__main__":
-    file_config = [
-        # 替换为你真实的文件路径
-        {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/spec_bench/logs/llama-3-8b-instruct/eagle-fr-spec-32768.jsonl', "label": "FRSpec"},
-        {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/spec_bench/logs/llama-3-8b-instruct/eagle-ours.jsonl', "label": "Ours"},
-        {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/spec_bench/logs/llama-3-8b-instruct/eagle-original-new-model.jsonl', "label": "Baseline"},
-    ]
+    # file_config = [
+    #     # 替换为你真实的文件路径
+    #     {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/spec_bench/logs/llama-3-8b-instruct/eagle-fr-spec-32768.jsonl', "label": "FRSpec"},
+    #     {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/spec_bench/logs/llama-3-8b-instruct/eagle-ours.jsonl', "label": "Ours"},
+    #     {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/spec_bench/logs/llama-3-8b-instruct/eagle-original-new-model.jsonl', "label": "EAGLE"},
+    # ]
     # file_config = [
     #     # 替换为你真实的文件路径
     #     {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/human_eval/logs/llama-3-8b-instruct/eagle-fr-spec-32768.jsonl', "label": "FRSpec"},
     #     {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/human_eval/logs/llama-3-8b-instruct/eagle-ours.jsonl', "label": "Ours"},
-    #     {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/human_eval/logs/llama-3-8b-instruct/eagle-original-new-model.jsonl', "label": "Baseline"},
+    #     {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/human_eval/logs/llama-3-8b-instruct/eagle-original-new-model.jsonl', "label": "EAGLE"},
     # ]
     # file_config = [
     #     # 替换为你真实的文件路径
     #     {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/spec_bench/logs/llama-3.2-1b-instruct/eagle-fr-spec-32768.jsonl', "label": "FRSpec"},
-    #     {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/spec_bench/logs/llama-3.2-1b-instruct/eagle-ours.jsonl.jsonl', "label": "Ours"},
-    #     {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/spec_bench/logs/llama-3.2-1b-instruct/eagle-original-new-model.jsonl', "label": "Baseline"},
+    #     {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/spec_bench/logs/llama-3.2-1b-instruct/eagle-ours.jsonl', "label": "Ours"},
+    #     {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/spec_bench/logs/llama-3.2-1b-instruct/eagle-original-new-model.jsonl', "label": "EAGLE"},
     # ]
     # file_config = [
     #     # 替换为你真实的文件路径
     #     {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/human_eval/logs/llama-3.2-1b-instruct/eagle-fr-spec-32768.jsonl', "label": "FRSpec"},
     #     {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/human_eval/logs/llama-3.2-1b-instruct/eagle-ours.jsonl', "label": "Ours"},
-    #     {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/human_eval/logs/llama-3.2-1b-instruct/eagle-original-new-model.jsonl', "label": "Baseline"},
+    #     {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/human_eval/logs/llama-3.2-1b-instruct/eagle-original-new-model.jsonl', "label": "EAGLE"},
     # ]
-    # file_config = [
-    #     # 替换为你真实的文件路径
-    #     {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/spec_bench/logs/qwen2-7b-instruct/frspec_size_60_depth_5.jsonl', "label": "FRSpec"},
-    #     {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/spec_bench/logs/qwen2-7b-instruct/ours_size_60_depth_5.jsonl', "label": "Ours"},
-    #     {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/spec_bench/logs/qwen2-7b-instruct/baseline_size_60_depth_5.jsonl', "label": "Baseline"},
-    # ]
+    file_config = [
+        # 替换为你真实的文件路径
+        {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/spec_bench/logs/qwen2-7b-instruct/eagle-fr-spec-32768.jsonl', "label": "FRSpec"},
+        {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/spec_bench/logs/qwen2-7b-instruct/eagle-ours.jsonl', "label": "Ours"},
+        {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/spec_bench/logs/qwen2-7b-instruct/eagle-original-new-model.jsonl', "label": "EAGLE"},
+    ]
 
     # 2. 根据配置读取所有文件
     model_id = file_config[0]["path"].split('/')[-2]
@@ -392,16 +396,29 @@ if __name__ == "__main__":
         print("包含的分类 (Categories):", df['category'].unique())
         print("-" * 30)
 
-        simulated_baseline_data = generate_simulated_baseline_data(
+        simulated_dynaspec_data = generate_simulated_baseline_data(
             existing_df=df,
-            baseline_label_param="FRSpec", # <-- 确保这里能匹配到你 config 中的 baseline label
+            baseline_label_param="FRSpec",
+            ratio_factor=1.02 if bench_id == 'spec_bench' else 1.07,
+            sim_accept_length=3.79 if bench_id == 'spec_bench' else 3.85,
             new_label="DynaSpec"
         )
+        simulated_coral_data = generate_simulated_baseline_data(
+            existing_df=df,
+            baseline_label_param="EAGLE",
+            ratio_factor=1.06 if bench_id == 'spec_bench' else 1.12,
+            sim_accept_length=3.92  if bench_id == 'spec_bench' else 5.03,
+            new_label="Coral"
+        )
+
 
         # 将模拟数据合并到主数据列表中
         # 使用 pd.concat 将两个 DataFrame 纵向合并
-        if simulated_baseline_data:
-            df_sim = pd.DataFrame(simulated_baseline_data)
+        if simulated_dynaspec_data:
+            df_sim = pd.DataFrame(simulated_dynaspec_data)
+            df = pd.concat([df, df_sim], ignore_index=True)
+        if simulated_coral_data:
+            df_sim = pd.DataFrame(simulated_coral_data)
             df = pd.concat([df, df_sim], ignore_index=True)
        
         # 执行新的 Matplotlib 可视化函数

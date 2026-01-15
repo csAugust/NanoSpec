@@ -1,6 +1,6 @@
 export CUDA_VISIBLE_DEVICES=0
-Model_Path=/mnt/bos-text/models/hf_models/Llama-3.1-8B-Instruct
-Model_id="llama-3-8b-instruct"
+Model_Path=/mnt/user-ssd/chenzhiyang1/workspace/Models/Qwen2-7B-Instruct
+Model_id="qwen2-7b-instruct"
 Bench_name="spec_bench"
 
 python3 evaluation/inference_baseline.py \
@@ -10,4 +10,7 @@ python3 evaluation/inference_baseline.py \
     --memory-limit 0.8 \
     --bench-name $Bench_name \
     --dtype "float16" \
-    --chat-template "llama-3"
+    --chat-template "qwen2" \
+    --question-end 1000 \
+    --max-new-tokens 1024
+
