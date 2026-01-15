@@ -106,6 +106,25 @@ class LLM_with_tree_drafter(LLM):
 
         step_draft_times = []
 
+        COPY = False and not is_warmup
+        def _load(name_, dtype_=np.int32, device_=input_ids.device):
+            x = np.loadtxt(f'{name_}.txt', dtype=dtype_)
+            return torch.from_numpy(x).to(device_)
+        if COPY:
+            copy_time_stat = []
+            start_time = time.time()
+            step_draft_tokens_record_tensor = _load('step_draft_tokens')
+            step_tree_position_ids_record_tensor = _load('step_tree_position_ids')
+            step_tree_attn_masks_record_tensor = _load('step_tree_attn_masks', np.uint64)
+            step_tree_parents_record_tensor = _load('step_tree_parents')
+            copy_time_stat.append(time.time() - start_time)
+            
+        SAVE = False and not is_warmup
+        step_draft_tokens = []
+        step_tree_position_ids = []
+        step_tree_attn_masks = []
+        step_tree_parents = []
+
         if DO_PROFILE_DRAFT:
             torch.cuda.synchronize()
             decoding_start_time = time.time()
@@ -124,6 +143,20 @@ class LLM_with_tree_drafter(LLM):
                 torch.cuda.synchronize()
                 total_time = time.time() - start_time
                 step_draft_times.append(total_time)
+
+            if SAVE:
+                step_draft_tokens.append(self.tree_draft_ids.tolist())
+                step_tree_position_ids.append(self.tree_position_ids.tolist())
+                step_tree_attn_masks.append(self.tree_attn_mask.tolist())
+                step_tree_parents.append(self.tree_parent.tolist())
+            
+            if COPY and model_step < step_draft_tokens_record_tensor.shape[0]:
+                start_time = time.time()
+                self.tree_draft_ids.copy_(step_draft_tokens_record_tensor[model_step])
+                self.tree_position_ids.copy_(step_tree_position_ids_record_tensor[model_step])
+                self.tree_attn_mask.copy_(step_tree_attn_masks_record_tensor[model_step])
+                self.tree_parent.copy_(step_tree_parents_record_tensor[model_step])
+                copy_time_stat.append(time.time() - start_time)
 
             logits = self.decode(self.tree_draft_ids, self.tree_position_ids, self.cache_length, mask_2d=self.tree_attn_mask)
             self.tree_gt_ids.copy_(logits.argmax(dim=-1))
@@ -179,6 +212,18 @@ class LLM_with_tree_drafter(LLM):
             step_draft_times.append(0)
 
         tokens = tokens[:1+i].tolist()
+        
+        if SAVE:
+            def _save(tensor_, name_, dtype_=torch.int32):
+                tensor_ = torch.tensor(tensor_, dtype=dtype_).cpu().numpy()
+                # tensor_.tofile('step_draft_tokens.bin')
+                np.savetxt(f'{name_}.txt', tensor_, fmt='%d')
+            _save(step_draft_tokens, "step_draft_tokens")
+            _save(step_tree_position_ids, "step_tree_position_ids")
+            _save(step_tree_attn_masks, "step_tree_attn_masks", torch.uint64)
+            _save(step_tree_parents, "step_tree_parents")
+        if COPY:
+            print("Copy overhead: ", sum(copy_time_stat))
         
         self.context_tokens_set.clear()
         self.context_tokens_tensor = torch.empty((self.max_context_tokens), dtype=torch.int32, device="cuda")
