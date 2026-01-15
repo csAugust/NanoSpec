@@ -29,6 +29,12 @@ bash scripts/human_eval/llama3.2-1b-instruct/run_eagle_fr_spec.sh
 bash scripts/human_eval/llama3.2-1b-instruct/run_eagle.sh
 bash scripts/human_eval/llama3.2-1b-instruct/run_eagle_ours.sh
 
+bash scripts/gsm8k/llama3-8b-instruct/run_baseline.sh
+bash scripts/gsm8k/llama3-8b-instruct/run_eagle.sh
+bash scripts/gsm8k/llama3-8b-instruct/run_eagle_fr_spec.sh
+bash scripts/gsm8k/llama3-8b-instruct/run_eagle_ours.sh
+
+
 # 2. Evaluate speed
 bash scripts/spec_bench/llama3-8b-instruct/speed_up.sh
 

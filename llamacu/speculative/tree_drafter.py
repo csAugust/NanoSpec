@@ -70,6 +70,8 @@ class LLM_with_tree_drafter(LLM):
             MODE = 0
         # print("Running with mode ", mode)
         if MODE != 0:
+            # new_tokens_set = set(input_ids.view(-1).tolist())
+
             topk_indices = torch.topk(logits, k=3, dim=-1).indices
             combined_candidates_gpu = torch.cat([input_ids.view(-1), topk_indices.view(-1)])
             unique_candidates_gpu = torch.unique(combined_candidates_gpu)

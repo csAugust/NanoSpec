@@ -107,7 +107,7 @@ def get_model_answers(
         # try:
         torch.cuda.synchronize()
         start_time = time.time()
-        output_ids, new_token, step, accept_length_tree = forward_func(
+        output_ids, new_token, step, accept_length_tree, draft_time_list = forward_func(
             inputs,
             model,
             tokenizer,
@@ -153,11 +153,16 @@ def get_model_answers(
 
     accept_lengths_tree = []
     raw_answer = []
+    generate_speed_tree = []
+    decoding_speed_all = []
+    draft_time_all = []
     for question in tqdm(questions):
 
         choices = []
         for i in range(num_choices):
             cur_accept_lengths_tree = []
+            cur_draft_time_tree = []
+            cur_decoding_time_tree = []
             torch.manual_seed(i)
             
             turns = []
@@ -171,7 +176,7 @@ def get_model_answers(
             # try:
             torch.cuda.synchronize()
             start_time = time.time()
-            output_ids, new_token, step, accept_length_tree = forward_func(
+            output_ids, new_token, step, accept_length_tree, draft_time_list = forward_func(
                 inputs,
                 model,
                 tokenizer,
@@ -183,6 +188,13 @@ def get_model_answers(
             torch.cuda.synchronize()
             total_time = time.time() - start_time
             accept_lengths_tree.extend(accept_length_tree)
+
+            decoding_time = draft_time_list[-1]
+            decoding_speed = 0 if decoding_time == 0 else int(new_token) / decoding_time
+            draft_time_list = draft_time_list[:-1]
+
+            decoding_speed_all.append(decoding_speed)
+            draft_time_all.extend(draft_time_list)
 
             if teminators:
                 stop_token_ids_index = [
@@ -210,10 +222,15 @@ def get_model_answers(
             new_tokens.append(int(new_token))
             wall_time.append(total_time)
             generate_speed.append(int(new_token) / total_time)
+            generate_speed_tree.append(generate_speed)
             cur_accept_lengths_tree.extend(accept_length_tree)
+            cur_draft_time_tree.extend(draft_time_list)
+            cur_decoding_time_tree.append(decoding_time)
 
             choices.append({"index": i, "turns": turns, "decoding_steps": steps, "new_tokens": new_tokens, "wall_time": wall_time,
-                            "accept_lengths": cur_accept_lengths_tree, "generate_speed": generate_speed})
+                "accept_lengths": cur_accept_lengths_tree, "generate_speed": generate_speed, "avg_accept_length": sum(cur_accept_lengths_tree)/len(cur_accept_lengths_tree),
+                "total_draft_time(ms)": 1000*sum(cur_draft_time_tree), "avg_draft_time(ms)": 0 if len(cur_draft_time_tree)==0 else 1000*sum(cur_draft_time_tree)/len(cur_draft_time_tree),
+                "avg_decoding_time": np.mean(cur_decoding_time_tree), "decoding_speed": decoding_speed})
 
         # Dump answers
         os.makedirs(os.path.dirname(answer_file), exist_ok=True)
@@ -231,14 +248,20 @@ def get_model_answers(
 
 
     print("#Mean accepted tokens: ", np.mean(accept_lengths_tree))
+    flat_list = [item for sublist in generate_speed_tree for item in sublist]
+    mean_val = np.mean(flat_list)
+    print("#Mean generation speed: ", mean_val)
+    print("#Mean decoding speed: ", np.mean(decoding_speed_all))
+    print("#Mean draft time(ms): ", np.mean(draft_time_all) * 1000)
+    print("#Total draft time(ms): ", np.sum(draft_time_all) * 1000)
 
-    result = []
-    for ra, question in zip(raw_answer, questions):
-        pred_ans = clean_answer(ra)
-        is_cor = is_correct(pred_ans, question['answer'])
-        result.append(is_cor)
+    # result = []
+    # for ra, question in zip(raw_answer, questions):
+    #     pred_ans = clean_answer(ra)
+    #     is_cor = is_correct(pred_ans, question['answer'])
+    #     result.append(is_cor)
     
-    print('Accuracy:', sum(result) / len(result))
+    # print('Accuracy:', sum(result) / len(result))
 
 def reorg_answer_file(answer_file):
     """Sort by question id and de-duplication"""

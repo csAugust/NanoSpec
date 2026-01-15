@@ -348,6 +348,12 @@ if __name__ == "__main__":
     #     {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/human_eval/logs/llama-3-8b-instruct/eagle-ours.jsonl', "label": "Ours"},
     #     {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/human_eval/logs/llama-3-8b-instruct/eagle-original-new-model.jsonl', "label": "EAGLE"},
     # ]
+    file_config = [
+        # 替换为你真实的文件路径
+        {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/gsm8k/logs/llama-3-8b-instruct/eagle-fr-spec-32768.jsonl', "label": "FRSpec"},
+        {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/gsm8k/logs/llama-3-8b-instruct/eagle-ours.jsonl', "label": "Ours"},
+        {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/gsm8k/logs/llama-3-8b-instruct/eagle-original-new-model.jsonl', "label": "EAGLE"},
+    ]
     # file_config = [
     #     # 替换为你真实的文件路径
     #     {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/spec_bench/logs/llama-3.2-1b-instruct/eagle-fr-spec-32768.jsonl', "label": "FRSpec"},
@@ -360,12 +366,12 @@ if __name__ == "__main__":
     #     {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/human_eval/logs/llama-3.2-1b-instruct/eagle-ours.jsonl', "label": "Ours"},
     #     {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/human_eval/logs/llama-3.2-1b-instruct/eagle-original-new-model.jsonl', "label": "EAGLE"},
     # ]
-    file_config = [
-        # 替换为你真实的文件路径
-        {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/spec_bench/logs/qwen2-7b-instruct/eagle-fr-spec-32768.jsonl', "label": "FRSpec"},
-        {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/spec_bench/logs/qwen2-7b-instruct/eagle-ours.jsonl', "label": "Ours"},
-        {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/spec_bench/logs/qwen2-7b-instruct/eagle-original-new-model.jsonl', "label": "EAGLE"},
-    ]
+    # file_config = [
+    #     # 替换为你真实的文件路径
+    #     {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/spec_bench/logs/qwen2-7b-instruct/eagle-fr-spec-32768.jsonl', "label": "FRSpec"},
+    #     {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/spec_bench/logs/qwen2-7b-instruct/eagle-ours.jsonl', "label": "Ours"},
+    #     {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/spec_bench/logs/qwen2-7b-instruct/eagle-original-new-model.jsonl', "label": "EAGLE"},
+    # ]
 
     # 2. 根据配置读取所有文件
     model_id = file_config[0]["path"].split('/')[-2]
