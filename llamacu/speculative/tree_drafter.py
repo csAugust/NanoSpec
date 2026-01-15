@@ -56,23 +56,22 @@ class LLM_with_tree_drafter(LLM):
         self._load_from_ckpt(self.drafter_path, cls=self.drafter_type)
         super().load_from_hf()
 
-    def generate(self, input_ids, generation_length=100, teminators=[], tokenizer=None, is_warmup=False):
+    def generate(self, input_ids, generation_length=100, teminators=[], tokenizer=None, is_warmup=False, mode=0):
         assert input_ids.dtype == torch.int32
 
         prefix_length = input_ids.numel()
         position_ids = torch.arange(prefix_length, dtype=torch.int32, device="cuda")
         logits = self.prefill(input_ids, position_ids)
 
-        MODE = 2
+        MODE = mode
+        DO_PROFILE_DRAFT = True
         context_length = 0
-        self.master_context_tensor = torch.empty(0, dtype=torch.int32, device="cuda")
         if is_warmup:
             MODE = 0
-
+        # print("Running with mode ", mode)
         if MODE != 0:
             topk_indices = torch.topk(logits, k=3, dim=-1).indices
             combined_candidates_gpu = torch.cat([input_ids.view(-1), topk_indices.view(-1)])
-            # combined_candidates_gpu = input_ids.view(-1)
             unique_candidates_gpu = torch.unique(combined_candidates_gpu)
             new_tokens_set = set(unique_candidates_gpu.tolist())
 
@@ -107,17 +106,24 @@ class LLM_with_tree_drafter(LLM):
 
         step_draft_times = []
 
+        if DO_PROFILE_DRAFT:
+            torch.cuda.synchronize()
+            decoding_start_time = time.time()
         while i < generation_length-1 and not terminal:
             self.cache_length[0] = prefix_length + i
 
+            if DO_PROFILE_DRAFT:
+                torch.cuda.synchronize()
             start_time = time.time()
             torch.cuda.nvtx.range_push(f"draft")
             C.draft(self.tree_draft_ids.data_ptr(), self.tree_position_ids.data_ptr(), self.cache_length.data_ptr(),
                     self.tree_attn_mask.data_ptr(), self.tree_parent.data_ptr(),
                     self.context_tokens_tensor.data_ptr(), context_length, MODE)
             torch.cuda.nvtx.range_pop()
-            total_time = time.time() - start_time
-            step_draft_times.append(total_time)
+            if DO_PROFILE_DRAFT:
+                torch.cuda.synchronize()
+                total_time = time.time() - start_time
+                step_draft_times.append(total_time)
 
             logits = self.decode(self.tree_draft_ids, self.tree_position_ids, self.cache_length, mask_2d=self.tree_attn_mask)
             self.tree_gt_ids.copy_(logits.argmax(dim=-1))
@@ -164,6 +170,13 @@ class LLM_with_tree_drafter(LLM):
             tokens[1+i:1+i+append_length].copy_(self.tree_draft_ids[:append_length])
             self.tree_draft_ids[0] = self.tree_draft_ids[accept_length - 1]
             i += accept_length
+
+        if DO_PROFILE_DRAFT:
+            torch.cuda.synchronize()
+            decoding_total_time = time.time() - decoding_start_time
+            step_draft_times.append(decoding_total_time)
+        else:
+            step_draft_times.append(0)
 
         tokens = tokens[:1+i].tolist()
         

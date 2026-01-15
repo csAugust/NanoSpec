@@ -1,4 +1,4 @@
-export CUDA_VISIBLE_DEVICES=2
+export CUDA_VISIBLE_DEVICES=4
 Model_Path=/mnt/user-ssd/chenzhiyang1/workspace/Models/Qwen2-7B-Instruct
 Eagle_Path=/mnt/user-ssd/chenzhiyang1/workspace/Models/EAGLE-Qwen2-7B-Instruct
 Model_id="qwen2-7b-instruct"
@@ -15,6 +15,8 @@ python3 evaluation/inference_eagle.py \
     --chat-template "qwen2" \
     --eagle-num-iter 6 \
     --eagle-tree-size 60 \
-    --question-end 1000 \
+    --question-end 5 \
     --max-new-tokens 1024 \
+    --mode 0
+
 

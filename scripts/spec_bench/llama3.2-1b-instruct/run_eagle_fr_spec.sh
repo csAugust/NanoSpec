@@ -3,7 +3,7 @@ Model_Path=/mnt/user-ssd/chenzhiyang1/workspace/Models/Llama-3.2-1B-Instruct
 Eagle_Path=/mnt/user-ssd/chenzhiyang1/workspace/Models/LLaMA3.2-Instruct-1B-FR-Spec
 Model_id="llama-3.2-1b-instruct"
 Bench_name="spec_bench"
-Vocab=16384
+Vocab=32768
 
 python3 evaluation/inference_eagle.py \
     --model-path $Model_Path \
@@ -15,8 +15,9 @@ python3 evaluation/inference_eagle.py \
     --dtype "float16" \
     --chat-template "llama-3" \
     --eagle-num-iter 6 \
-    --eagle-tree-size 128 \
+    --eagle-tree-size 60 \
     --question-end 1000 \
     --max-new-tokens 1024 \
-    --V $Vocab
+    --V $Vocab \
+    --mode 0
 

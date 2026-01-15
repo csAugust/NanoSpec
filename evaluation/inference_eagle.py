@@ -7,6 +7,8 @@ from evaluation.gsm8k.eval import run_eval as run_eval_gsm8k
 from transformers import AutoTokenizer, AutoConfig
 from llamacu.speculative.eagle import LLM_with_eagle
 
+MODE = 0
+
 def eagle_forward(inputs, model, tokenizer, max_new_tokens, max_length, teminators, is_warmup=False):
     input_ids = inputs.input_ids.int()
 
@@ -19,7 +21,8 @@ def eagle_forward(inputs, model, tokenizer, max_new_tokens, max_length, teminato
         generation_length=max_new_tokens,
         teminators=teminators,
         tokenizer=tokenizer,
-        is_warmup=is_warmup
+        is_warmup=is_warmup,
+        mode=MODE,
     )
 
     new_token = len(output_ids)
@@ -116,8 +119,14 @@ if __name__ == "__main__":
         type=int,
         default=-1,
     )
+    parser.add_argument(
+        "--mode",
+        type=int,
+        default=0,
+    )
 
     args = parser.parse_args()
+    MODE = args.mode
 
     if args.bench_name == "gsm8k":
         question_file = f"data/gsm8k/gsm8k/main"

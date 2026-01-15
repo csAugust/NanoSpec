@@ -1,5 +1,5 @@
 export CUDA_VISIBLE_DEVICES=2
-Model_Path=meta-llama/Llama-3.2-1B-instruct
+Model_Path=/mnt/user-ssd/chenzhiyang1/workspace/Models/Llama-3.2-1B-Instruct
 Model_id="llama-3.2-1b-instruct"
 Bench_name="spec_bench"
 
@@ -10,4 +10,5 @@ python3 evaluation/inference_baseline.py \
     --memory-limit 0.8 \
     --bench-name $Bench_name \
     --dtype "float16" \
-    --chat-template "llama-3"
+    --chat-template "llama-3" \
+    --max-new-tokens 1024
