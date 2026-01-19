@@ -133,18 +133,18 @@ class LLM_with_tree_drafter(LLM):
         while i < generation_length-1 and not terminal:
             self.cache_length[0] = prefix_length + i
 
-            if DO_PROFILE_DRAFT:
-                torch.cuda.synchronize()
-            start_time = time.time()
+            # if DO_PROFILE_DRAFT:
+            #     torch.cuda.synchronize()
+            # start_time = time.time()
             torch.cuda.nvtx.range_push(f"draft")
             C.draft(self.tree_draft_ids.data_ptr(), self.tree_position_ids.data_ptr(), self.cache_length.data_ptr(),
                     self.tree_attn_mask.data_ptr(), self.tree_parent.data_ptr(),
                     self.context_tokens_tensor.data_ptr(), context_length, MODE)
             torch.cuda.nvtx.range_pop()
-            if DO_PROFILE_DRAFT:
-                torch.cuda.synchronize()
-                total_time = time.time() - start_time
-                step_draft_times.append(total_time)
+            # if DO_PROFILE_DRAFT:
+            #     torch.cuda.synchronize()
+            #     total_time = time.time() - start_time
+            #     step_draft_times.append(total_time)
 
             if SAVE:
                 step_draft_tokens.append(self.tree_draft_ids.tolist())

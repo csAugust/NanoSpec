@@ -1,6 +1,7 @@
 data/spec_bench/logs/
 data/human_eval/logs/
 step_info
+build_ckpt
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

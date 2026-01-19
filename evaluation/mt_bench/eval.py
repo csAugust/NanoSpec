@@ -186,7 +186,7 @@ def get_model_answers(
             new_tokens = []
             wall_time = []
             generate_speed = []
-            for j in range(len(question["turns"])):
+            for j in range(len(question["turns"][:1])):
                 qs = question["turns"][j]
                 messages.append({
                     "role": "user",

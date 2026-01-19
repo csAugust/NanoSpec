@@ -7,12 +7,13 @@ import numpy as np
 
 CATEGORY_MAP = {
     # 你的数据category : 论文表格列名
-    # 'translation': 'MT',
-    # 'coding': 'Code',
-    # 'math': 'Math',
-    # 'qa': 'QA',
-    # 'rag': 'RAG',
-    # 'summarization': 'Summ.',
+    'translation': 'MT',
+    'conversation': 'Conv.',
+    'math_reasoning': 'Math',
+    'qa': 'QA',
+    'rag': 'RAG',
+    'summarization': 'Summ.',
+    'human-eval': 'Code'
 }
 
 # 论文报告的 DynaSpec 接受长度
@@ -65,20 +66,19 @@ def generate_simulated_baseline_data(existing_df, baseline_label_param, ratio_fa
     categories = ref_avg_speed.index.tolist()
 
     for cat in categories:
-        # 3. 获取论文对应的列名
-        # 如果找不到映射，就使用 'Average' 列的数据
-        # paper_col = CATEGORY_MAP.get(cat, 'Average') 
-        
-        # # 获取论文中的接受长度
-        # sim_accept_length = PAPER_ACCEPT_LENGTH.get(paper_col, PAPER_ACCEPT_LENGTH['Average'])
-        
-        # # 4. 计算速度比例因子 (DynaSpec / FR-Spec)
-        # speed_dyna = PAPER_SPEED_DYNASPEC.get(paper_col, PAPER_SPEED_DYNASPEC['Average'])
-        # speed_fr = PAPER_SPEED_FRSPEC.get(paper_col, PAPER_SPEED_FRSPEC['Average'])
-        
-        # ratio_factor = 1.0
-        # if speed_fr != 0:
-        #     ratio_factor = speed_dyna / speed_fr
+        if new_label == "DynaSpec":
+            # 3. 获取论文对应的列名
+            paper_col = CATEGORY_MAP.get(cat, 'Average') 
+            
+            # 获取论文中的接受长度
+            sim_accept_length = PAPER_ACCEPT_LENGTH.get(paper_col, PAPER_ACCEPT_LENGTH['Average'])
+            
+            # 4. 计算速度比例因子 (DynaSpec / FR-Spec)
+            speed_dyna = PAPER_SPEED_DYNASPEC.get(paper_col, PAPER_SPEED_DYNASPEC['Average'])
+            speed_fr = PAPER_SPEED_FRSPEC.get(paper_col, PAPER_SPEED_FRSPEC['Average'])
+            
+            if speed_fr != 0:
+                ratio_factor = speed_dyna / speed_fr
         
         # 获取参考基线的实际平均速度
         base_speed = ref_avg_speed.get(cat)
@@ -167,12 +167,13 @@ def load_single_jsonl(file_path, method_label):
                                     'category': category,
                                     'generate_speed': float(speed),
                                     'avg_accept_length': float(avg_len),
-                                    'decoding_speed': float(decoding_speed),
-                                    'total_draft_time': float(total_draft_time)
+                                    'decoding_speed': float(decoding_speed) if decoding_speed else 0,
+                                    'total_draft_time': float(total_draft_time) if total_draft_time else 0
                                 })
                             
-                except (json.JSONDecodeError, IndexError, KeyError, TypeError, ValueError):
-                     continue 
+                except (json.JSONDecodeError, IndexError, KeyError, TypeError, ValueError) as e:
+                    print(f"Error: {file_path} {e}")
+                    return [] 
                      
     except FileNotFoundError:
         print(f"Error: File not found: {file_path}")
@@ -329,6 +330,12 @@ def visualize_comparison_matplotlib(df, model_id, bench_id):
     print(df.groupby(['category', 'method']).mean(numeric_only=True))
     print("-" * 30)
     print(df.groupby('method').mean(numeric_only=True))
+    print("方法最终平均值 (先计算每个category的均值，再对这些均值求平均):")
+    # 先计算每个category和method的平均值
+    category_method_means = df.groupby(['category', 'method']).mean(numeric_only=True)
+    # 再对每个method计算所有category平均值的平均值
+    method_final_means = category_method_means.groupby('method').mean()
+    print(method_final_means)
     print("-" * 30)
 
 
@@ -336,38 +343,43 @@ def visualize_comparison_matplotlib(df, model_id, bench_id):
 # 主程序入口
 # ==========================================
 if __name__ == "__main__":
+    file_config = [
+        # 替换为你真实的文件路径
+        {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/spec_bench/logs/llama-3-8b-instruct/baseline.jsonl', "label": "AR"},
+        {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/spec_bench/logs/llama-3-8b-instruct/eagle-fr-spec-32768.jsonl', "label": "FRSpec"},
+        {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/spec_bench/logs/llama-3-8b-instruct/eagle-ours-noasync.jsonl', "label": "Ours"},
+        {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/spec_bench/logs/llama-3-8b-instruct/eagle-original-new-model.jsonl', "label": "EAGLE"},
+    ]
     # file_config = [
     #     # 替换为你真实的文件路径
-    #     {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/spec_bench/logs/llama-3-8b-instruct/eagle-fr-spec-32768.jsonl', "label": "FRSpec"},
-    #     {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/spec_bench/logs/llama-3-8b-instruct/eagle-ours.jsonl', "label": "Ours"},
-    #     {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/spec_bench/logs/llama-3-8b-instruct/eagle-original-new-model.jsonl', "label": "EAGLE"},
-    # ]
-    # file_config = [
-    #     # 替换为你真实的文件路径
+    #     {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/human_eval/logs/llama-3-8b-instruct/baseline.jsonl', "label": "AR"},
     #     {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/human_eval/logs/llama-3-8b-instruct/eagle-fr-spec-32768.jsonl', "label": "FRSpec"},
     #     {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/human_eval/logs/llama-3-8b-instruct/eagle-ours.jsonl', "label": "Ours"},
     #     {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/human_eval/logs/llama-3-8b-instruct/eagle-original-new-model.jsonl', "label": "EAGLE"},
     # ]
-    file_config = [
-        # 替换为你真实的文件路径
-        {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/gsm8k/logs/llama-3-8b-instruct/eagle-fr-spec-32768.jsonl', "label": "FRSpec"},
-        {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/gsm8k/logs/llama-3-8b-instruct/eagle-ours.jsonl', "label": "Ours"},
-        {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/gsm8k/logs/llama-3-8b-instruct/eagle-original-new-model.jsonl', "label": "EAGLE"},
-    ]
     # file_config = [
     #     # 替换为你真实的文件路径
+    #     {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/gsm8k/logs/llama-3-8b-instruct/eagle-fr-spec-32768.jsonl', "label": "FRSpec"},
+    #     {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/gsm8k/logs/llama-3-8b-instruct/eagle-ours.jsonl', "label": "Ours"},
+    #     {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/gsm8k/logs/llama-3-8b-instruct/eagle-original-new-model.jsonl', "label": "EAGLE"},
+    # ]
+    # file_config = [
+    #     # 替换为你真实的文件路径
+    #     {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/spec_bench/logs/llama-3.2-1b-instruct/baseline.jsonl', "label": "AR"},
     #     {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/spec_bench/logs/llama-3.2-1b-instruct/eagle-fr-spec-32768.jsonl', "label": "FRSpec"},
     #     {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/spec_bench/logs/llama-3.2-1b-instruct/eagle-ours.jsonl', "label": "Ours"},
     #     {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/spec_bench/logs/llama-3.2-1b-instruct/eagle-original-new-model.jsonl', "label": "EAGLE"},
     # ]
     # file_config = [
     #     # 替换为你真实的文件路径
+    #     {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/human_eval/logs/llama-3.2-1b-instruct/baseline.jsonl', "label": "AR"},
     #     {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/human_eval/logs/llama-3.2-1b-instruct/eagle-fr-spec-32768.jsonl', "label": "FRSpec"},
     #     {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/human_eval/logs/llama-3.2-1b-instruct/eagle-ours.jsonl', "label": "Ours"},
     #     {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/human_eval/logs/llama-3.2-1b-instruct/eagle-original-new-model.jsonl', "label": "EAGLE"},
     # ]
     # file_config = [
     #     # 替换为你真实的文件路径
+    #     {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/spec_bench/logs/qwen2-7b-instruct/baseline.jsonl', "label": "AR"},
     #     {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/spec_bench/logs/qwen2-7b-instruct/eagle-fr-spec-32768.jsonl', "label": "FRSpec"},
     #     {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/spec_bench/logs/qwen2-7b-instruct/eagle-ours.jsonl', "label": "Ours"},
     #     {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/spec_bench/logs/qwen2-7b-instruct/eagle-original-new-model.jsonl', "label": "EAGLE"},
@@ -388,6 +400,11 @@ if __name__ == "__main__":
 
     # 3. 转换为 Pandas DataFrame
     df = pd.DataFrame(all_data)
+
+    # Merge specific categories into 'conversation' as requested
+    categories_to_merge = ['writing', 'roleplay', 'reasoning', 'math', 'coding', 'extraction', 'stem', 'humanities']
+    if not df.empty and 'category' in df.columns:
+        df.loc[df['category'].isin(categories_to_merge), 'category'] = 'conversation'
 
     # 4. 数据校验与绘图
     if df.empty:
