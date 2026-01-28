@@ -76,6 +76,7 @@ class LLM_with_tree_drafter(LLM):
             combined_candidates_gpu = torch.cat([input_ids.view(-1), topk_indices.view(-1)])
             unique_candidates_gpu = torch.unique(combined_candidates_gpu)
             new_tokens_set = set(unique_candidates_gpu.tolist())
+            # new_tokens_set = set([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16])
 
             # context_tokens = input_ids[0].tolist()
             # for i in range(prefix_length):
@@ -107,6 +108,8 @@ class LLM_with_tree_drafter(LLM):
         terminal = False
 
         step_draft_times = []
+        self.hit_count = 0
+        self.total_count = 0
 
         COPY = False and not is_warmup
         def _load(name_, dtype_=np.int32, device_=input_ids.device):
@@ -178,6 +181,7 @@ class LLM_with_tree_drafter(LLM):
                     terminal = True
             append_length = min(accept_length, generation_length - 1 - i)
 
+            # self.count_hit_context(MODE, self.tree_draft_ids[:append_length])
             if MODE != 0:
                 # topk_indices = torch.topk(logits, k=3, dim=-1).indices
                 # combined_candidates_gpu = torch.cat([self.tree_draft_ids.view(-1), topk_indices.view(-1)])
@@ -229,8 +233,36 @@ class LLM_with_tree_drafter(LLM):
         
         self.context_tokens_set.clear()
         self.context_tokens_tensor = torch.empty((self.max_context_tokens), dtype=torch.int32, device="cuda")
+        
+        # print(f"Hit {self.hit_count}, Total {self.total_count}, {self.hit_count / self.total_count:.2f}")
         return tokens, accept_lengths, model_step, step_draft_times
     
+    def count_hit_context(self, mode=0, acc_tokens=None):
+        if acc_tokens is not None:
+            acc_draft_cnt = 0
+            acc_draft_str = ''
+            full_draft_cnt = 0
+            draft_tokens = self.tree_draft_ids.tolist()
+            if mode == 0:
+                src = self.V
+            else:
+                src = self.context_tokens_set
+            for token in draft_tokens:
+                if token in src:
+                    full_draft_cnt += 1
+            for token in acc_tokens:
+                if token.item() in src:
+                    acc_draft_cnt += 1
+                    acc_draft_str += 'Y'
+                else:
+                    acc_draft_str += 'N'
+
+            full_occur_rate = full_draft_cnt / len(draft_tokens)
+            acc_occur_rate = acc_draft_cnt / len(acc_tokens)
+            self.hit_count += acc_draft_cnt
+            self.total_count += len(acc_tokens)
+            # print(f"full {full_occur_rate:.2f}, acc {acc_occur_rate:.2f}({acc_draft_str}) | acc length {acc_tokens.numel()} | {self.tokenizer.decode(acc_tokens, skip_special_tokens=False)}")
+
     def update_context_new(self, new_tokens_set, mode=0):
         old_context_length = len(self.context_tokens_set)
         real_new_tokens_set = new_tokens_set.difference(self.context_tokens_set)
@@ -240,6 +272,10 @@ class LLM_with_tree_drafter(LLM):
 
         self.context_tokens_set.update(real_new_tokens_set)
         real_new_tokens_tensor = torch.tensor(list(real_new_tokens_set), dtype=torch.int32, device='cpu')
+
+        # enable this if context tokens may exceed self.max_context_tokens
+        # self.context_tokens_set = set(list(self.context_tokens_set)[-self.max_context_tokens:])
+
         new_context_length = len(self.context_tokens_set)
         if mode == 1:
             self.context_tokens_tensor[old_context_length:new_context_length].copy_(real_new_tokens_tensor)

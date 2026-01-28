@@ -52,6 +52,7 @@ class LLM_with_eagle(LLM_with_tree_drafter):
     def _load(self, name, param, dtype=None, cls=None):
         if cls == self.drafter_type:
             if name == "token_id_remap":
+                self.V = param
                 C.load_model(f"{cls}.{name}", param.data_ptr())
                 return
             if dtype is None:

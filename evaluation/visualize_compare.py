@@ -17,9 +17,15 @@ CATEGORY_MAP = {
 }
 
 # 论文报告的 DynaSpec 接受长度
+# PAPER_ACCEPT_LENGTH = {
+#     'MT': 3.51, 'Conv.': 4.07, 'RAG': 3.93, 'Math': 4.23,
+#     'QA': 3.38, 'Summ.': 3.55, 'Code': 3.85, 'Average': 3.79
+# }
+
+# Qwen
 PAPER_ACCEPT_LENGTH = {
-    'MT': 3.51, 'Conv.': 4.07, 'RAG': 3.93, 'Math': 4.23,
-    'QA': 3.38, 'Summ.': 3.55, 'Code': 3.85, 'Average': 3.79
+    'MT': 2.86, 'Conv.': 3.72, 'RAG': 3.32, 'Math': 4.18,
+    'QA': 2.97, 'Summ.': 3.24, 'Code': 3.96, 'Average': 3.46
 }
 
 # 论文报告的速度数据 (用于计算比例)
@@ -384,6 +390,13 @@ if __name__ == "__main__":
     #     {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/spec_bench/logs/qwen2-7b-instruct/eagle-ours.jsonl', "label": "Ours"},
     #     {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/spec_bench/logs/qwen2-7b-instruct/eagle-original-new-model.jsonl', "label": "EAGLE"},
     # ]
+    file_config = [
+        # 替换为你真实的文件路径
+        {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/human_eval/logs/qwen2-7b-instruct/baseline.jsonl', "label": "AR"},
+        {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/human_eval/logs/qwen2-7b-instruct/eagle-fr-spec-32768.jsonl', "label": "FRSpec"},
+        {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/human_eval/logs/qwen2-7b-instruct/eagle-ours.jsonl', "label": "Ours"},
+        {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/human_eval/logs/qwen2-7b-instruct/eagle-original-new-model.jsonl', "label": "EAGLE"},
+    ]
 
     # 2. 根据配置读取所有文件
     model_id = file_config[0]["path"].split('/')[-2]
