@@ -6,6 +6,7 @@
 #include "model/model.cuh"
 #include "model/medusa.cuh"
 #include "model/eagle.cuh"
+#include "model/eagle3.cuh"
 
 #define DTYPE_SWITCH(COND, ...)               \
   [&] {                                      \
@@ -129,6 +130,41 @@ void init_eagle_model(
     });
 }
 
+void init_eagle3_model(
+    int num_layers,
+    int intermediate_size,
+    int num_attention_heads,
+    int num_key_value_heads,
+    int head_dim,
+    float rms_norm_eps,
+    int num_iter,
+    int topk_per_iter,
+    int tree_size,
+    int draft_vocab_size,
+    int torch_dtype,
+    int max_context_tokens
+) {
+    DTYPE_SWITCH(torch_dtype, [&] {
+        const bool attention_bias = dynamic_cast<ModelImpl<elem_type, true>*>(model) != nullptr;
+        BOOL_SWITCH(attention_bias, has_attention_bias, [&] {
+            model = new Eagle3Impl<elem_type, has_attention_bias>(
+                (ModelImpl<elem_type, has_attention_bias>*)model,
+                num_layers,
+                intermediate_size,
+                num_attention_heads,
+                num_key_value_heads,
+                head_dim,
+                rms_norm_eps,
+                num_iter,
+                topk_per_iter,
+                tree_size,
+                draft_vocab_size,
+                max_context_tokens
+            );
+        });
+    });
+}
+
 int init_storage() {
     return model->init_storage();
 }
@@ -187,6 +223,7 @@ PYBIND11_MODULE(C, m) {
     m.def("init_base_model", &init_base_model, "Init base model");
     m.def("init_medusa_model", &init_medusa_model, "Init medusa model");
     m.def("init_eagle_model", &init_eagle_model, "Init eagle model");
+    m.def("init_eagle3_model", &init_eagle3_model, "Init eagle3 model");
     m.def("init_storage", &init_storage, "Init storage");
     m.def("load_model", &load_model, "Load model");
     m.def("prefill", &prefill, "Prefill");
