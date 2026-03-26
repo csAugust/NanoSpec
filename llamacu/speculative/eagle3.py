@@ -27,6 +27,7 @@ class LLM_with_eagle3(LLM_with_tree_drafter):
                  num_iter=6,
                  topk_per_iter=10,
                  tree_size=60,
+                 V=None,
                  max_context_tokens=3072,
                  **kwargs):
         super().__init__(
@@ -38,8 +39,13 @@ class LLM_with_eagle3(LLM_with_tree_drafter):
 
         self.eagle3_path = eagle3_path
         self.eagle3_config = Eagle3Config.from_pretrained(eagle3_path)
-        self.draft_vocab_size = self.eagle3_config.draft_vocab_size
-        self.valid_target_set = None  # built when d2t is loaded
+        self.full_draft_vocab_size = self.eagle3_config.draft_vocab_size
+        self.V = V
+        self.valid_target_set = None
+        self.token_id_remap_cpu = None  # set externally before load_from_hf for FR-Spec
+
+        # Effective vocab size: V for FR-Spec mode 0, full for mode 1/2
+        effective_vocab = V if (V is not None and 0 < V < self.full_draft_vocab_size) else self.full_draft_vocab_size
 
         C.init_eagle3_model(
             self.eagle3_config.eagle3_num_layers,
@@ -51,13 +57,18 @@ class LLM_with_eagle3(LLM_with_tree_drafter):
             num_iter,
             topk_per_iter,
             self.tree_size,
-            self.draft_vocab_size,
+            effective_vocab,
             self.dtype_int,
             max_context_tokens,
         )
 
     def _load(self, name, param, dtype=None, cls=None):
         if cls == self.drafter_type:
+            # Direct token_id_remap loading (freq-ranked, for FR-Spec)
+            if name == "token_id_remap":
+                C.load_model(f"{cls}.token_id_remap", param.data_ptr())
+                return
+
             if dtype is None:
                 dtype = self.dtype
 
@@ -67,6 +78,10 @@ class LLM_with_eagle3(LLM_with_tree_drafter):
 
             # d2t mapping: stored as int64 offsets, load as int32
             if name == 'd2t':
+                # Skip d2t when using freq-based token_id_remap (FR-Spec on full vocab)
+                if self.token_id_remap_cpu is not None:
+                    print(f"  eagle3: skipping d2t (using freq-based token_id_remap)")
+                    return
                 # Build valid_target_set for Python-side context filtering
                 d2t_cpu = param.to(torch.int64)
                 indices = torch.arange(len(d2t_cpu), dtype=torch.int64)
@@ -100,6 +115,10 @@ class LLM_with_eagle3(LLM_with_tree_drafter):
             elif name.startswith('norm.'):
                 mapped = f'{cls}.final_norm.{name[5:]}'
             elif name.startswith('lm_head.'):
+                # FR-Spec: gather V rows from full lm_head on CPU
+                if self.token_id_remap_cpu is not None and name == 'lm_head.weight':
+                    param = param[self.token_id_remap_cpu.long()].contiguous()
+                    print(f"  eagle3 load: lm_head.weight gathered to [{param.shape[0]}, {param.shape[1]}]")
                 mapped = f'{cls}.lm_head.{name[8:]}'
             else:
                 print(f"Warning: skipping unknown EAGLE-3 weight: {name}")

@@ -298,6 +298,10 @@ struct Eagle3Impl : Model {
                 final_norm->load_to_storage(name, ptr);
             } else if (name.find("eagle3.lm_head") != std::string::npos) {
                 lm_head->load_to_storage(name, ptr);
+            } else if (name.find("eagle3.token_id_remap") != std::string::npos) {
+                // Direct token_id_remap loading (freq-ranked indices for FR-Spec)
+                cudaMemcpy((void*)token_id_remap, ptr, draft_vocab_size * sizeof(int32_t), cudaMemcpyHostToDevice);
+                printf("Eagle3: loaded token_id_remap (V=%d)\n", draft_vocab_size);
             } else if (name.find("eagle3.d2t") != std::string::npos) {
                 // d2t is stored as offsets; convert to direct remap on load
                 int32_t* tmp_d2t;

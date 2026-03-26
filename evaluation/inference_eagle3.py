@@ -48,8 +48,12 @@ if __name__ == "__main__":
     parser.add_argument("--dtype", type=str, default="float16",
                         choices=["float32", "float64", "float16", "bfloat16"])
     parser.add_argument("--chat-template", type=str, default="llama-3")
+    parser.add_argument("--V", type=int, default=-1,
+                        help="FR-Spec vocab subset size. -1 = use full draft_vocab_size")
+    parser.add_argument("--freq-path", type=str, default=None,
+                        help="Path to freq file directory. Defaults to eagle3-path")
     parser.add_argument("--mode", type=int, default=0,
-                        help="Draft mode: 0=d2t baseline, 1=indexed_gemm, 2=prefetch")
+                        help="Draft mode: 0=baseline/FR-Spec, 1=indexed_gemm, 2=prefetch")
 
     args = parser.parse_args()
     MODE = args.mode
@@ -69,6 +73,8 @@ if __name__ == "__main__":
     config = AutoConfig.from_pretrained(args.model_path)
     max_length = min(args.max_length, config.max_position_embeddings)
 
+    V = args.V if args.V != -1 else None
+
     model = LLM_with_eagle3(
         base_path=args.model_path,
         eagle3_path=args.eagle3_path,
@@ -77,9 +83,25 @@ if __name__ == "__main__":
         cuda_graph=args.cuda_graph,
         num_iter=args.eagle_num_iter,
         tree_size=args.eagle_tree_size,
+        V=V,
         max_context_tokens=3072 if args.mode > 0 else 0,
     )
     model.init_storage()
+
+    # Load freq-based token_id_remap for FR-Spec
+    if args.V != -1:
+        freq_dir = args.freq_path or args.eagle3_path
+        freq_file = f'{freq_dir}/freq_{args.V}.pt'
+        with open(freq_file, 'rb') as f:
+            token_id_remap = torch.tensor(torch.load(f, weights_only=True), dtype=torch.int32, device="cpu")
+            token_id_remap = token_id_remap[:args.V]
+        print(f'Loaded token_id_remap from {freq_file}')
+        model.token_id_remap_cpu = token_id_remap
+        model._load("token_id_remap", token_id_remap, cls="eagle3")
+    else:
+        # No FR-Spec: identity remap (will be overridden by d2t if present)
+        pass
+
     model.load_from_hf()
 
     tokenizer = AutoTokenizer.from_pretrained(args.model_path)

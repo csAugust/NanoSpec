@@ -350,12 +350,28 @@ def visualize_comparison_matplotlib(df, model_id, bench_id):
 # ==========================================
 if __name__ == "__main__":
     file_config = [
-        # 替换为你真实的文件路径
-        {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/spec_bench/logs/llama-3-8b-instruct/baseline.jsonl', "label": "AR"},
-        {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/spec_bench/logs/llama-3-8b-instruct/eagle-fr-spec-32768.jsonl', "label": "FRSpec"},
-        {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/spec_bench/logs/llama-3-8b-instruct/eagle-ours-noasync.jsonl', "label": "Ours"},
-        {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/spec_bench/logs/llama-3-8b-instruct/eagle-original-new-model.jsonl', "label": "EAGLE"},
+        {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/spec_bench/logs/llama-3-8b-instruct_eagle3/eagle3-original.jsonl', "label": "EAGLE3"},
+        {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/spec_bench/logs/llama-3-8b-instruct_eagle3/eagle3-fr-spec-32768.jsonl', "label": "FRSpec"},
+        {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/spec_bench/logs/llama-3-8b-instruct_eagle3/eagle3-ours.jsonl', "label": "Ours"},
     ]
+    # file_config = [
+    #     {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/spec_bench/model_answer/llama-3-8b-instruct/eagle3-fr-spec.jsonl', "label": "FRSpec"},
+    #     {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/spec_bench/model_answer/llama-3-8b-instruct/eagle3-ours.jsonl', "label": "Ours"},
+    # ]
+    # file_config = [
+    #     # 替换为你真实的文件路径
+    #     {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/spec_bench/logs/llama-3-8b-instruct/baseline.jsonl', "label": "AR"},
+    #     {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/spec_bench/logs/llama-3-8b-instruct/eagle-fr-spec-32768.jsonl', "label": "FRSpec"},
+    #     {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/spec_bench/logs/llama-3-8b-instruct/eagle-ours-noasync.jsonl', "label": "Ours"},
+    #     {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/spec_bench/logs/llama-3-8b-instruct/eagle-original-new-model.jsonl', "label": "EAGLE"},
+    # ]
+    # file_config = [
+    #     # 替换为你真实的文件路径
+    #     {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/spec_bench/logs/llama-3-8b-instruct/eagle-ours-1024.jsonl', "label": "Ours"},
+    #     {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/spec_bench/logs/llama-3-8b-instruct/eagle-ours-2048.jsonl', "label": "Ours1"},
+    #     {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/spec_bench/logs/llama-3-8b-instruct/eagle-ours-4096.jsonl', "label": "Ours2"},
+    #     {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/spec_bench/logs/llama-3-8b-instruct/eagle-ours-8192.jsonl', "label": "Ours3"},
+    # ]
     # file_config = [
     #     # 替换为你真实的文件路径
     #     {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/human_eval/logs/llama-3-8b-instruct/baseline.jsonl', "label": "AR"},
@@ -390,13 +406,13 @@ if __name__ == "__main__":
     #     {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/spec_bench/logs/qwen2-7b-instruct/eagle-ours.jsonl', "label": "Ours"},
     #     {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/spec_bench/logs/qwen2-7b-instruct/eagle-original-new-model.jsonl', "label": "EAGLE"},
     # ]
-    file_config = [
-        # 替换为你真实的文件路径
-        {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/human_eval/logs/qwen2-7b-instruct/baseline.jsonl', "label": "AR"},
-        {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/human_eval/logs/qwen2-7b-instruct/eagle-fr-spec-32768.jsonl', "label": "FRSpec"},
-        {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/human_eval/logs/qwen2-7b-instruct/eagle-ours.jsonl', "label": "Ours"},
-        {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/human_eval/logs/qwen2-7b-instruct/eagle-original-new-model.jsonl', "label": "EAGLE"},
-    ]
+    # file_config = [
+    #     # 替换为你真实的文件路径
+    #     {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/human_eval/logs/qwen2-7b-instruct/baseline.jsonl', "label": "AR"},
+    #     {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/human_eval/logs/qwen2-7b-instruct/eagle-fr-spec-32768.jsonl', "label": "FRSpec"},
+    #     {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/human_eval/logs/qwen2-7b-instruct/eagle-ours.jsonl', "label": "Ours"},
+    #     {"path": '/mnt/user-ssd/chenzhiyang1/workspace/Inference/FR-Spec/data/human_eval/logs/qwen2-7b-instruct/eagle-original-new-model.jsonl', "label": "EAGLE"},
+    # ]
 
     # 2. 根据配置读取所有文件
     model_id = file_config[0]["path"].split('/')[-2]
@@ -450,12 +466,12 @@ if __name__ == "__main__":
 
         # 将模拟数据合并到主数据列表中
         # 使用 pd.concat 将两个 DataFrame 纵向合并
-        if simulated_dynaspec_data:
-            df_sim = pd.DataFrame(simulated_dynaspec_data)
-            df = pd.concat([df, df_sim], ignore_index=True)
-        if simulated_coral_data:
-            df_sim = pd.DataFrame(simulated_coral_data)
-            df = pd.concat([df, df_sim], ignore_index=True)
+        # if simulated_dynaspec_data:
+        #     df_sim = pd.DataFrame(simulated_dynaspec_data)
+        #     df = pd.concat([df, df_sim], ignore_index=True)
+        # if simulated_coral_data:
+        #     df_sim = pd.DataFrame(simulated_coral_data)
+        #     df = pd.concat([df, df_sim], ignore_index=True)
        
         # 执行新的 Matplotlib 可视化函数
         visualize_comparison_matplotlib(df, model_id, bench_id)
