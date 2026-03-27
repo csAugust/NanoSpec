@@ -1,12 +1,16 @@
 #include <pybind11/pybind11.h>
+#include <pybind11/stl.h>
 #include <cuda_runtime.h>
 
 #include "utils.cuh"
 #include "trait.cuh"
+#include "model/profiling.cuh"
 #include "model/model.cuh"
 #include "model/medusa.cuh"
 #include "model/eagle.cuh"
 #include "model/eagle3.cuh"
+
+DraftProfiler g_profiler;
 
 #define DTYPE_SWITCH(COND, ...)               \
   [&] {                                      \
@@ -219,6 +223,28 @@ void trigger_async_prefetch(std::uintptr_t gpu_context_buffer, std::uintptr_t cp
     );
 }
 
+void enable_draft_profiling(bool enabled) {
+    if (enabled && g_profiler.accum[0] == 0 && g_profiler.num_calls == 0) {
+        g_profiler.init();
+    }
+    g_profiler.enabled = enabled;
+}
+
+void reset_draft_profiling() {
+    g_profiler.reset();
+}
+
+std::vector<float> get_draft_timing() {
+    // Returns [backbone_ms, lmhead_ms, tree_ops_ms, gather_wait_ms, num_calls]
+    return {
+        g_profiler.accum[PL_BACKBONE],
+        g_profiler.accum[PL_LMHEAD],
+        g_profiler.accum[PL_TREE],
+        g_profiler.accum[PL_GATHER_WAIT],
+        (float)g_profiler.num_calls
+    };
+}
+
 PYBIND11_MODULE(C, m) {
     m.def("init_base_model", &init_base_model, "Init base model");
     m.def("init_medusa_model", &init_medusa_model, "Init medusa model");
@@ -231,4 +257,7 @@ PYBIND11_MODULE(C, m) {
     m.def("draft", &draft, "Draft");
     m.def("verify_and_fix", &verify_and_fix, "Verify and fix");
     m.def("trigger_async_prefetch", &trigger_async_prefetch, "trigger_async_prefetch");
-} 
+    m.def("enable_draft_profiling", &enable_draft_profiling, "Enable/disable draft profiling");
+    m.def("reset_draft_profiling", &reset_draft_profiling, "Reset draft profiling counters");
+    m.def("get_draft_timing", &get_draft_timing, "Get accumulated draft timing [backbone, lmhead, tree, gather_wait, num_calls]");
+}

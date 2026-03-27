@@ -3,6 +3,7 @@
 #include "model.cuh"
 #include "topk.cuh"
 #include "layer.cuh"
+#include "profiling.cuh"
 #include "kvcache.cuh"
 #include "norm.cuh"
 #include "elementwise.cuh"
@@ -550,6 +551,7 @@ struct Eagle3Impl : Model {
         cudaMemcpy(eagle_original_length, cache_length, sizeof(int32_t), cudaMemcpyDeviceToHost);
         eagle_padded_length = (eagle_original_length[0] + 256 - 1) / 128 * 128;
 
+        g_profiler.mark(calc_stream.stream, PL_BACKBONE);
         if (is_first_draft) {
             model->embedding->prefill(calc_stream, 1, tree_draft_ids);
             eagle3_draft_prefill(this->num_history_tokens);
@@ -574,6 +576,7 @@ struct Eagle3Impl : Model {
         repeat(calc_stream, topk_per_iter, 1, 0, eagle_position_ids);
 
         { // d = 0: topk on the last position
+            g_profiler.mark(calc_stream.stream, PL_LMHEAD);
             final_norm->prefill(calc_stream, 1, working_buf + (num_prev - 1) * model->hidden_size, nullptr);
             lm_head->prefill(calc_stream, 1, final_norm->output, eagle_logits);
             log_softmax(calc_stream, 1, draft_vocab_size, eagle_logits);
@@ -585,6 +588,7 @@ struct Eagle3Impl : Model {
             // Map draft indices to target vocab: remap[draft_idx] = draft_idx + d2t[draft_idx]
             remap(calc_stream, topk_per_iter, topk_func->topk_pos, topk_func_2->topk_pos, token_id_remap);
 
+            g_profiler.mark(calc_stream.stream, PL_TREE);
             cudaMemcpy(topk_func_2->topk_val, topk_func->topk_val, topk_per_iter * sizeof(T), cudaMemcpyDeviceToDevice);
             // Repeat last position's working_buf for topk_per_iter draft branches
             repeat(calc_stream, topk_per_iter, model->hidden_size, num_prev - 1, working_buf, prev_buf);
@@ -592,6 +596,7 @@ struct Eagle3Impl : Model {
         }
 
         for (int d = 1; d < num_iter; ++d) {
+            g_profiler.mark(calc_stream.stream, PL_BACKBONE);
             add(calc_stream, 1, eagle_cache_length, topk_per_iter);
 
             // Embed the draft tokens (target vocab IDs)
@@ -605,6 +610,7 @@ struct Eagle3Impl : Model {
             add(calc_stream, topk_per_iter, eagle_position_ids, 1);
 
             // lm_head on working_buf
+            g_profiler.mark(calc_stream.stream, PL_LMHEAD);
             final_norm->prefill(calc_stream, topk_per_iter, working_buf, nullptr);
             lm_head->prefill(calc_stream, topk_per_iter, final_norm->output, eagle_logits);
             log_softmax(calc_stream, topk_per_iter, draft_vocab_size, eagle_logits);
@@ -615,6 +621,7 @@ struct Eagle3Impl : Model {
             cudaMemcpy(tired_history_pos + topk_per_iter + (d - 1) * topk_per_iter * topk_per_iter, topk_func->topk_pos, topk_per_iter * topk_per_iter * sizeof(int32_t), cudaMemcpyDeviceToDevice);
             topk_func_2->prefill(calc_stream, 1, topk_func->topk_val, topk_per_iter * topk_per_iter, topk_per_iter);
 
+            g_profiler.mark(calc_stream.stream, PL_TREE);
             cudaMemcpy(tmp_mask_2d, eagle_mask_2d, topk_per_iter * sizeof(uint64_t), cudaMemcpyDeviceToDevice);
             set_parent(calc_stream, topk_per_iter, tired_history_parent + (d - 1) * topk_per_iter, topk_func_2->topk_pos, topk_per_iter + (d - 1) * topk_per_iter * topk_per_iter);
             update_tree(calc_stream, topk_per_iter, topk_per_iter * d, eagle_mask_2d, tmp_mask_2d, topk_func_2->topk_pos);
@@ -626,12 +633,14 @@ struct Eagle3Impl : Model {
         }
 
         // Final tree selection
+        g_profiler.mark(calc_stream.stream, PL_TREE);
         topk_func_2->prefill(calc_stream, 1, tired_history_val);
 
         // Build tree
         build_dynamic_tree(calc_stream, tree_size, eagle_original_length[0], topk_per_iter, tired_history_parent, topk_func_2->topk_pos, tree_position_ids, tree_attn_mask, tree_parent);
         remap_id(calc_stream, tree_size - 1, topk_func_2->topk_pos, tired_history_pos, token_id_remap, tree_draft_ids + 1);
 
+        g_profiler.end_call();
         is_first_draft = false;
     }
 
@@ -641,6 +650,7 @@ struct Eagle3Impl : Model {
         cudaMemcpy(eagle_original_length, cache_length, sizeof(int32_t), cudaMemcpyDeviceToHost);
         eagle_padded_length = (eagle_original_length[0] + 256 - 1) / 128 * 128;
 
+        g_profiler.mark(calc_stream.stream, PL_BACKBONE);
         if (is_first_draft) {
             model->embedding->prefill(calc_stream, 1, tree_draft_ids);
             eagle3_draft_prefill(this->num_history_tokens);
@@ -678,6 +688,7 @@ struct Eagle3Impl : Model {
         target_to_draft(calc_stream, context_length, context_tokens, context_draft_ids, t2d_index);
 
         { // d = 0
+            g_profiler.mark(calc_stream.stream, PL_LMHEAD);
             final_norm->prefill(calc_stream, 1, working_buf + (num_prev - 1) * model->hidden_size, nullptr);
             lm_head->prefill_gathered(calc_stream, final_norm->output, context_draft_ids, context_length, eagle_logits);
             log_softmax(calc_stream, 1, context_length, eagle_logits);
@@ -688,14 +699,17 @@ struct Eagle3Impl : Model {
 
             // Remap: index-in-context → target vocab ID (for embedding and tree)
             remap(calc_stream, topk_per_iter, topk_func->topk_pos, topk_func_2->topk_pos, context_tokens);
+            g_profiler.mark(calc_stream.stream, PL_TREE);
             cudaMemcpy(topk_func_2->topk_val, topk_func->topk_val, topk_per_iter * sizeof(T), cudaMemcpyDeviceToDevice);
             repeat(calc_stream, topk_per_iter, model->hidden_size, num_prev - 1, working_buf, prev_buf);
             init_tree(calc_stream, topk_per_iter, eagle_mask_2d);
         }
 
         for (int d = 1; d < num_iter; ++d) {
+            g_profiler.mark(calc_stream.stream, PL_BACKBONE);
             eagle3_draft_depth_iter(d);
 
+            g_profiler.mark(calc_stream.stream, PL_LMHEAD);
             final_norm->prefill(calc_stream, topk_per_iter, working_buf, nullptr);
             for (int i = 0; i < topk_per_iter; i++) {
                 lm_head->prefill_gathered(calc_stream,
@@ -711,6 +725,7 @@ struct Eagle3Impl : Model {
             cudaMemcpy(tired_history_pos + topk_per_iter + (d - 1) * topk_per_iter * topk_per_iter, topk_func->topk_pos, topk_per_iter * topk_per_iter * sizeof(int32_t), cudaMemcpyDeviceToDevice);
             topk_func_2->prefill(calc_stream, 1, topk_func->topk_val, topk_per_iter * topk_per_iter, topk_per_iter);
 
+            g_profiler.mark(calc_stream.stream, PL_TREE);
             cudaMemcpy(tmp_mask_2d, eagle_mask_2d, topk_per_iter * sizeof(uint64_t), cudaMemcpyDeviceToDevice);
             set_parent(calc_stream, topk_per_iter, tired_history_parent + (d - 1) * topk_per_iter, topk_func_2->topk_pos, topk_per_iter + (d - 1) * topk_per_iter * topk_per_iter);
             update_tree(calc_stream, topk_per_iter, topk_per_iter * d, eagle_mask_2d, tmp_mask_2d, topk_func_2->topk_pos);
@@ -718,9 +733,11 @@ struct Eagle3Impl : Model {
             remap_id(calc_stream, topk_per_iter, topk_func_2->topk_pos, topk_func->topk_pos, context_tokens);
         }
 
+        g_profiler.mark(calc_stream.stream, PL_TREE);
         topk_func_2->prefill(calc_stream, 1, tired_history_val);
         build_dynamic_tree(calc_stream, tree_size, eagle_original_length[0], topk_per_iter, tired_history_parent, topk_func_2->topk_pos, tree_position_ids, tree_attn_mask, tree_parent);
         remap_id(calc_stream, tree_size - 1, topk_func_2->topk_pos, tired_history_pos, context_tokens, tree_draft_ids + 1);
+        g_profiler.end_call();
         is_first_draft = false;
     }
 
@@ -730,9 +747,11 @@ struct Eagle3Impl : Model {
         prepare_eagle3_draft_hidden(tree_draft_ids, cache_length);
 
         // Wait for async repack to complete
+        g_profiler.mark(calc_stream.stream, PL_GATHER_WAIT);
         cudaStreamWaitEvent(calc_stream.stream, copy_event, 0);
 
         { // d = 0
+            g_profiler.mark(calc_stream.stream, PL_LMHEAD);
             final_norm->prefill(calc_stream, 1, working_buf + (num_prev - 1) * model->hidden_size, nullptr);
             lm_head->prefill_repack_sync(calc_stream, 1, context_length, final_norm->output, repack_buffer, eagle_logits);
             log_softmax(calc_stream, 1, context_length, eagle_logits);
@@ -743,14 +762,17 @@ struct Eagle3Impl : Model {
 
             // Remap: index-in-context → target vocab ID
             remap(calc_stream, topk_per_iter, topk_func->topk_pos, topk_func_2->topk_pos, context_tokens);
+            g_profiler.mark(calc_stream.stream, PL_TREE);
             cudaMemcpy(topk_func_2->topk_val, topk_func->topk_val, topk_per_iter * sizeof(T), cudaMemcpyDeviceToDevice);
             repeat(calc_stream, topk_per_iter, model->hidden_size, num_prev - 1, working_buf, prev_buf);
             init_tree(calc_stream, topk_per_iter, eagle_mask_2d);
         }
 
         for (int d = 1; d < num_iter; ++d) {
+            g_profiler.mark(calc_stream.stream, PL_BACKBONE);
             eagle3_draft_depth_iter(d);
 
+            g_profiler.mark(calc_stream.stream, PL_LMHEAD);
             final_norm->prefill(calc_stream, topk_per_iter, working_buf, nullptr);
             lm_head->prefill_repack_sync(calc_stream, topk_per_iter, context_length, final_norm->output, repack_buffer, eagle_logits);
             log_softmax(calc_stream, topk_per_iter, context_length, eagle_logits);
@@ -761,6 +783,7 @@ struct Eagle3Impl : Model {
             cudaMemcpy(tired_history_pos + topk_per_iter + (d - 1) * topk_per_iter * topk_per_iter, topk_func->topk_pos, topk_per_iter * topk_per_iter * sizeof(int32_t), cudaMemcpyDeviceToDevice);
             topk_func_2->prefill(calc_stream, 1, topk_func->topk_val, topk_per_iter * topk_per_iter, topk_per_iter);
 
+            g_profiler.mark(calc_stream.stream, PL_TREE);
             cudaMemcpy(tmp_mask_2d, eagle_mask_2d, topk_per_iter * sizeof(uint64_t), cudaMemcpyDeviceToDevice);
             set_parent(calc_stream, topk_per_iter, tired_history_parent + (d - 1) * topk_per_iter, topk_func_2->topk_pos, topk_per_iter + (d - 1) * topk_per_iter * topk_per_iter);
             update_tree(calc_stream, topk_per_iter, topk_per_iter * d, eagle_mask_2d, tmp_mask_2d, topk_func_2->topk_pos);
@@ -768,9 +791,11 @@ struct Eagle3Impl : Model {
             remap_id(calc_stream, topk_per_iter, topk_func_2->topk_pos, topk_func->topk_pos, context_tokens);
         }
 
+        g_profiler.mark(calc_stream.stream, PL_TREE);
         topk_func_2->prefill(calc_stream, 1, tired_history_val);
         build_dynamic_tree(calc_stream, tree_size, eagle_original_length[0], topk_per_iter, tired_history_parent, topk_func_2->topk_pos, tree_position_ids, tree_attn_mask, tree_parent);
         remap_id(calc_stream, tree_size - 1, topk_func_2->topk_pos, tired_history_pos, context_tokens, tree_draft_ids + 1);
+        g_profiler.end_call();
         is_first_draft = false;
     }
 
