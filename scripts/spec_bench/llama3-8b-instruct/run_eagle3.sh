@@ -1,6 +1,7 @@
 export CUDA_VISIBLE_DEVICES=0
 Model_Path=/mnt/bos-text/models/hf_models/Llama-3.1-8B-Instruct
-Eagle3_Path=/mnt/user-ssd/chenzhiyang1/workspace/Train/DFlash/SpecForge/outputs/llama3.1-8b-eagle3-sharegpt-online/epoch_9_step_20380
+# Eagle3_Path=/mnt/user-ssd/chenzhiyang1/workspace/Train/DFlash/SpecForge/outputs/llama3.1-8b-eagle3-sharegpt-online/epoch_9_step_20380
+Eagle3_Path=/mnt/user-ssd/chenzhiyang1/workspace/Train/DFlash/SpecForge/outputs/llama3.1-8b-eagle3-sharegpt-online-smallvocab/epoch_9_step_2550
 Model_id="llama-3-8b-instruct"
 Bench_name="spec_bench"
 
@@ -18,4 +19,4 @@ python3 evaluation/inference_eagle3.py \
     --question-end 1000 \
     --max-new-tokens 1024 \
     --mode 0 \
-    > logs/eagle3_original.log 2>&1
+    > results/extra/logs/eagle3_original.log 2>&1

@@ -9,7 +9,7 @@ Measures per-step timing of:
   - Weight Gather Overhead (mode 2 only)
 
 Usage:
-  python evaluation/profile_latency.py \
+  python experiments/latency/profile_latency.py \
     --model-path <base_model> --eagle-path <eagle_model> \
     --mode 0 --V 32768 --num-samples 20
 """

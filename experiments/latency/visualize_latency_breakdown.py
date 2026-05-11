@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Visualize latency breakdown per decoding step for rebuttal.
-Reads CSV files from logs/profile/ and produces a stacked bar chart.
+Reads CSV files from results/extra/logs/profile/ and produces a stacked bar chart.
 """
 import os
 import numpy as np
@@ -14,14 +14,14 @@ import matplotlib.pyplot as plt
 
 # Profiling results: (config_label, drafter, csv_file)
 CONFIGS = [
-    ("Full Vocab",        "EAGLE-2", "logs/profile/eagle2_fullvocab.csv"),
-    ("FR-Spec",           "EAGLE-2", "logs/profile/eagle2_frspec.csv"),
-    ("NanoSpec\n(Gather)", "EAGLE-2", "logs/profile/eagle2_mode1.csv"),
-    ("NanoSpec\n(Prefetch)","EAGLE-2", "logs/profile/eagle2_mode2.csv"),
-    ("Full Vocab",        "EAGLE-3", "logs/profile/eagle3_fullvocab.csv"),
-    ("FR-Spec",           "EAGLE-3", "logs/profile/eagle3_frspec.csv"),
-    ("NanoSpec\n(Gather)", "EAGLE-3", "logs/profile/eagle3_mode1.csv"),
-    ("NanoSpec\n(Prefetch)","EAGLE-3", "logs/profile/eagle3_mode2.csv"),
+    ("Full Vocab",        "EAGLE-2", "results/extra/logs/profile/eagle2_fullvocab.csv"),
+    ("FR-Spec",           "EAGLE-2", "results/extra/logs/profile/eagle2_frspec.csv"),
+    ("NanoSpec\n(Indexed GEMM)", "EAGLE-2", "results/extra/logs/profile/eagle2_mode1.csv"),
+    ("NanoSpec\n","EAGLE-2", "results/extra/logs/profile/eagle2_mode2.csv"),
+    ("Full Vocab",        "EAGLE-3", "results/extra/logs/profile/eagle3_fullvocab.csv"),
+    ("FR-Spec",           "EAGLE-3", "results/extra/logs/profile/eagle3_frspec.csv"),
+    ("NanoSpec\n(Indexed GEMM)", "EAGLE-3", "results/extra/logs/profile/eagle3_mode1.csv"),
+    ("NanoSpec\n","EAGLE-3", "results/extra/logs/profile/eagle3_mode2.csv"),
 ]
 
 COMPONENTS = ['backbone', 'lm_head', 'tree_ops', 'gather_wait', 'verify']
@@ -122,7 +122,7 @@ def plot_breakdown(out_path):
                ncol=len(COMPONENTS), fontsize=12, frameon=True,
                borderpad=0.5, columnspacing=1.2)
 
-    fig.suptitle('Latency Breakdown per Decoding Step — Llama-3.1-8B on H20',
+    fig.suptitle('Latency Breakdown per Decoding Step (Llama-3.1-8B on H20)',
                  fontsize=16, fontweight='bold', y=1.02)
     fig.tight_layout()
     fig.subplots_adjust(wspace=0.2)
@@ -134,5 +134,5 @@ def plot_breakdown(out_path):
 
 
 if __name__ == "__main__":
-    plot_breakdown('figs/latency_breakdown.pdf')
-    plot_breakdown('figs/latency_breakdown.png')
+    plot_breakdown('results/extra/figs/latency_breakdown.pdf')
+    plot_breakdown('results/extra/figs/latency_breakdown.png')

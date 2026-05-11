@@ -183,12 +183,8 @@ class LLM_with_tree_drafter(LLM):
 
             # self.count_hit_context(MODE, self.tree_draft_ids[:append_length])
             if MODE != 0:
-                # topk_indices = torch.topk(logits, k=3, dim=-1).indices
-                # combined_candidates_gpu = torch.cat([self.tree_draft_ids.view(-1), topk_indices.view(-1)])
-                # unique_candidates_gpu = torch.unique(combined_candidates_gpu)
-                # new_tokens_set = set(unique_candidates_gpu.tolist())
-
-                combined_ids_gpu = torch.cat([self.tree_draft_ids.view(-1), self.tree_gt_ids.view(-1)])
+                topk_indices = torch.topk(logits, k=3, dim=-1).indices
+                combined_ids_gpu = torch.cat([self.tree_draft_ids.view(-1), self.tree_gt_ids.view(-1), topk_indices.view(-1)])
                 unique_ids_gpu = torch.unique(combined_ids_gpu)
                 new_tokens_set = set(unique_ids_gpu.tolist())
 

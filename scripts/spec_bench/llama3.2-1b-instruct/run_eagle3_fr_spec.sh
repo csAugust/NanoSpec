@@ -22,4 +22,4 @@ python3 evaluation/inference_eagle3.py \
     --max-new-tokens 1024 \
     --V $Vocab \
     --mode 0 \
-    > logs/eagle3_fr_spec_1b.log 2>&1
+    > results/extra/logs/eagle3_fr_spec_1b.log 2>&1

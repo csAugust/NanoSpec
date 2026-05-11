@@ -1,7 +1,12 @@
-data/spec_bench/logs/
-data/human_eval/logs/
+data
 step_info
 build_ckpt
+
+# Experiment results (intermediate outputs)
+results/
+EAGLE/
+step_*.txt
+freq_stat.sh
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

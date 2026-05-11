@@ -229,7 +229,7 @@ if __name__ == "__main__":
 
     # combined figure
     if model_dfs:
-        plot_combined(model_dfs, 'figs/eagle3_combined.pdf')
+        plot_combined(model_dfs, 'results/main/figs/eagle3_combined.pdf')
 
     # cross-model summary
     if all_summaries:

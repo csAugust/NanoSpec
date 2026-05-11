@@ -18,4 +18,4 @@ python3 evaluation/inference_eagle3.py \
     --question-end 1000 \
     --max-new-tokens 1024 \
     --mode 2 \
-    > logs/eagle3_ours_1b_he.log 2>&1
+    > results/extra/logs/eagle3_ours_1b_he.log 2>&1
