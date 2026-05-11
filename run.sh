@@ -1,9 +1,10 @@
 source /opt/venv/bin/activate
 
-CUDA_VISIBLE_DEVICES=7 python examples/example_generate.py
-
 # rebuild cuda
 DEBUG_BUILD=0 python setup.py build_ext --inplace
+
+# infer one sample
+CUDA_VISIBLE_DEVICES=7 python examples/example_generate.py
 
 # 1. Run evaluations
 bash scripts/spec_bench/llama3-8b-instruct/run_baseline.sh

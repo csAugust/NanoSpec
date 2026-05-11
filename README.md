@@ -1,6 +1,6 @@
 # NanoSpec: Dynamic Minimalist Vocabulary Pruning for Speculative Decoding
 
-[![arXiv](https://img.shields.io/badge/arXiv-TODO-b31b1b.svg)](<arxiv_link>) [![License](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+<!-- [![arXiv](https://img.shields.io/badge/arXiv-TODO-b31b1b.svg)](<arxiv_link>) [![License](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT) -->
 
 ## Introduction
 
@@ -10,11 +10,11 @@ The massive vocabulary sizes of large language models (often exceeding 100k toke
 
 As a complementary plug-and-play module, NanoSpec cuts draft inference time by an average of **51.6%**, delivering a **1.12-1.35x** end-to-end speedup over EAGLE-2 and EAGLE-3.
 
-<!--
+
 <div align="center">
-  <img src="assets/<figure_name>" alt="NanoSpec Overview" width="800px">
+  <img src="assets/overview.png" alt="NanoSpec Overview" width="800px">
 </div>
--->
+
 
 ## Installation
 
@@ -46,7 +46,7 @@ DEBUG_BUILD=0 python setup.py build_ext --inplace   # fast incremental rebuild
 
 ## Model Weights
 
-NanoSpec requires a base model and an EAGLE-2 draft model. Download from HuggingFace:
+NanoSpec requires a base model and an EAGLE-2/3 draft model. To compare with FR-Spec baseline, FR-Spec requires frequency statistics (`freq_*.pt` files) that should be placed in the EAGLE-2/3 draft model directory. Download from HuggingFace:
 
 | Base Model | EAGLE-2 Draft Model | Frequency Statistics |
 |------------|---------------------|---------------------|
@@ -54,14 +54,20 @@ NanoSpec requires a base model and an EAGLE-2 draft model. Download from Hugging
 | [Llama-3.2-1B-Instruct](https://huggingface.co/meta-llama/Llama-3.2-1B-Instruct) | [EAGLE-LLaMA3.2-Instruct-1B](https://huggingface.co/yuhuili/EAGLE-LLaMA3.2-Instruct-1B) | [LLaMA3.2-Instruct-1B-FR-Spec](https://huggingface.co/thunlp/LLaMA3.2-Instruct-1B-FR-Spec) |
 | [Qwen2-7B-Instruct](https://huggingface.co/Qwen/Qwen2-7B-Instruct) | [EAGLE-Qwen2-7B-Instruct](https://huggingface.co/yuhuili/EAGLE-Qwen2-7B-Instruct) | [Qwen2-7B-Instruct-FR-Spec](https://huggingface.co/thunlp/Qwen2-7B-Instruct-FR-Spec) |
 
-The frequency statistics (`freq_*.pt` files) should be placed in the EAGLE-2 draft model directory.
-
 ## Quick Start
 
 ```bash
-cd examples
-python example_generate.py
+# infer one sample
+python examples/example_generate.py
+
+# run evaluations
+bash scripts/spec_bench/llama3-8b-instruct/run_baseline.sh
+bash scripts/spec_bench/llama3-8b-instruct/run_eagle.sh
+bash scripts/spec_bench/llama3-8b-instruct/run_eagle_fr_spec.sh
+bash scripts/spec_bench/llama3-8b-instruct/run_eagle_ours.sh
 ```
+
+For more available scrips, refer to `run.sh`
 
 ## Evaluation
 
@@ -76,6 +82,8 @@ All evaluation scripts are in `scripts/<benchmark>/<model>/`. Three benchmarks a
 | `run_eagle_fr_spec.sh` | FR-Spec | Static frequency-ranked vocabulary pruning (`--V 32768`) |
 | `run_eagle_ours.sh` | **NanoSpec** | Dynamic context-aware vocabulary pruning (`--mode 2`) |
 
+Set `--mode 1` for **NanoSpec** to evaluate performance without asynchronous gathering (i.e., use indexed GEMM).
+
 ### Running Benchmarks
 
 Using Llama-3.1-8B-Instruct on spec_bench as an example:
@@ -89,18 +97,15 @@ bash scripts/spec_bench/llama3-8b-instruct/run_eagle_ours.sh
 
 # Compare speed across all modes
 bash scripts/spec_bench/llama3-8b-instruct/speed_up.sh
-
-# Check correctness (human_eval and gsm8k only)
-bash scripts/<benchmark>/llama3-8b-instruct/check_correctness.sh
 ```
 
-Replace `<benchmark>` with `spec_bench`, `human_eval`, or `gsm8k`.
+Replace `spec_bench` with `human_eval`, or `gsm8k` for more benchmarks.
 
 ### EAGLE-3 Support
 
 EAGLE-3 draft models are also supported via `run_eagle3*.sh` scripts and `evaluation/inference_eagle3.py`.
 
-**Important note on EAGLE-3 model weights:** The official EAGLE-3 models from [SafeAILab/EAGLE](https://github.com/SafeAILab/EAGLE) are trained on a statically pruned sub-vocabulary (~32k tokens), similar in spirit to FR-Spec. This means their lm_head output dimension is already reduced and the vocabulary is fixed at training time. Applying NanoSpec on top of such models yields limited benefit, because NanoSpec's advantage comes from dynamically constructing a much smaller context-aware vocabulary (< 3k tokens) from the **full** vocabulary space at each step --- a capability that is incompatible with a model whose lm_head was trained on a pre-selected subset.
+**Important note on EAGLE-3 model weights:** The official EAGLE-3 models from [SafeAILab/EAGLE](https://github.com/SafeAILab/EAGLE) are trained on a statically pruned sub-vocabulary (~32k tokens), similar in spirit to FR-Spec. This means their lm_head output dimension is already reduced and the vocabulary is fixed at training time. Applying NanoSpec on top of such models yields limited benefit, because NanoSpec's advantage comes from dynamically constructing a much smaller context-aware vocabulary (< 3k tokens) from the **full** vocabulary space at each step -- a capability that is incompatible with a model whose lm_head was trained on a pre-selected subset.
 
 To fully leverage NanoSpec with EAGLE-3, you need to **train an EAGLE-3 model with the full vocabulary** (`draft_vocab_size == vocab_size`). The `run_eagle3*.sh` scripts are configured for such full-vocab EAGLE-3 models. With a full-vocab model:
 
@@ -197,12 +202,15 @@ This implementation is built on [FR-Spec](https://github.com/thunlp/FR-Spec) (AC
 
 Draft models from [EAGLE](https://github.com/SafeAILab/EAGLE). Benchmarks from [Spec-Bench](https://github.com/hemingkx/Spec-Bench). Flash Attention kernels from [flash-attention v2.4.2](https://github.com/Dao-AILab/flash-attention/blob/v2.4.2/csrc/flash_attn).
 
-## Contributors
-
-<contributors_list>
 
 ## Citation
 
 ```bibtex
-<citation>
+@inproceedings{nanospec,
+  title={NanoSpec: Accelerating Speculative Decoding with Minimalist In-Context Vocabularies},
+  author={Chen, Zhiyang and Xu, Daliang and Zhang, Yinyuan and Wang, Chenghua and Xu, MengWei and Ma, Yun},
+  booktitle={Proceedings of the 43 rd International Conference on Machine
+Learning},
+  year={2026}
+}
 ```
