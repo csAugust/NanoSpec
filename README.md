@@ -8,7 +8,7 @@ The massive vocabulary sizes of large language models (often exceeding 100k toke
 
 **NanoSpec** dynamically constructs a minimalist, context-aware active vocabulary for each generation step. Leveraging the inherent temporal locality of language generation, NanoSpec achieves high coverage while slashing the average vocabulary size by over **40x** (to <3k tokens) without any auxiliary trained parameters. A system-algorithm co-design with **asynchronous gathering** and **GPU-resident state management** overcomes the inefficiencies of sparse memory access on modern hardware.
 
-As a complementary plug-and-play module, NanoSpec cuts draft inference time by an average of **51.6%**, delivering a **1.12-1.35x** end-to-end speedup over EAGLE-2 and EAGLE-3.
+As a complementary plug-and-play module, NanoSpec cuts draft inference time by an average of **51.6%**, delivering a **1.17-1.29x** end-to-end speedup over EAGLE-2 and EAGLE-3.
 
 
 <div align="center">
